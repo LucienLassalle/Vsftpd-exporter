@@ -9,6 +9,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -33,543 +34,545 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Logger 结构化日志记录器
+// Logger structured logging component
 type Logger struct {
 	logger *log.Logger
 }
 
-// NewLogger 创建新的日志记录器
+// NewLogger creates a new logger instance
 func NewLogger() *Logger {
 	return &Logger{
 		logger: log.New(os.Stdout, "", log.LstdFlags|log.Lshortfile),
 	}
 }
 
-// Info 记录信息级别日志
+// Info logs informational messages
 func (l *Logger) Info(msg string, args ...interface{}) {
 	l.logger.Printf("[INFO] "+msg, args...)
 }
 
-// Warn 记录警告级别日志
+// Warn logs warning messages
 func (l *Logger) Warn(msg string, args ...interface{}) {
 	l.logger.Printf("[WARN] "+msg, args...)
 }
 
-// Error 记录错误级别日志
+// Error logs error messages
 func (l *Logger) Error(msg string, args ...interface{}) {
 	l.logger.Printf("[ERROR] "+msg, args...)
 }
 
-// Debug 记录调试级别日志
+// Debug logs debug messages
 func (l *Logger) Debug(msg string, args ...interface{}) {
 	l.logger.Printf("[DEBUG] "+msg, args...)
 }
 
-// 全局日志记录器
+// Global logger instance
 var logger = NewLogger()
 
-// 预编译的正则表达式（提高性能）
+// Pre-compiled regular expressions for performance
 var (
-	// vsftpd.log 日志格式正则表达式
+	// vsftpd.log log format regular expressions
 	connectRegex = regexp.MustCompile(`^(\w+\s+\w+\s+\d+\s+\d+:\d+:\d+\s+\d+)\s+\[pid\s+(\d+)\]\s+CONNECT:\s+Client\s+"([^"]+)"`)
 	loginRegex   = regexp.MustCompile(`^(\w+\s+\w+\s+\d+\s+\d+:\d+:\d+\s+\d+)\s+\[pid\s+(\d+)\]\s+\[([^\]]+)\]\s+OK\s+LOGIN:\s+Client\s+"([^"]+)"`)
 
-	// 主机和用户名验证正则表达式
+	// Host and username validation regular expressions
 	domainRegex   = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
 	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 )
 
-// Config 定义了vsftpd exporter的配置结构
-// 包含FTP服务器连接信息、监控参数和日志文件路径等配置项
+// Config defines the vsftpd exporter configuration structure
+// Contains FTP server connection info, monitoring parameters, and log file paths
 type Config struct {
-	TargetHost       string `json:"target_host"`        // 目标服务器地址，支持IP地址或域名
-	FTPPort          string `json:"ftp_port"`           // FTP服务器端口，默认为21
-	FTPUser          string `json:"ftp_user"`           // FTP登录用户名，用于连接测试
-	FTPPassword      string `json:"ftp_password"`       // FTP登录密码，用于连接测试
-	NeedSSH          bool   `json:"need_ssh"`           // 是否需要通过SSH连接到目标服务器
-	SSHPort          string `json:"ssh_port"`           // SSH连接端口，默认22
-	SSHUser          string `json:"ssh_user"`           // SSH登录用户名
-	SSHPassword      string `json:"ssh_password"`       // SSH登录密码
-	LogFilePath      string `json:"Xferlog_file_path"`  // vsftpd日志文件路径，用于解析传输统计
-	ListenPort       string `json:"listen_port"`        // Prometheus metrics HTTP服务监听端口，默认9100
-	CheckInterval    int    `json:"check_interval"`     // 监控检查间隔时间（秒），默认30秒
-	VsftplogEnabled  bool   `json:"vsftplog_enabled"`   // 是否启用vsftpd日志解析
-	VsftplogFilePath string `json:"vsftplog_file_path"` // vsftpd详细日志文件路径
+	TargetHost       string `json:"target_host"`        // Target server address, supports IP or domain
+	FTPPort          string `json:"ftp_port"`           // FTP server port, default 21
+	FTPUser          string `json:"ftp_user"`           // FTP login username for connection tests
+	FTPPassword      string `json:"ftp_password"`       // FTP login password for connection tests
+	TLS              bool   `json:"tls"`                // Enable TLS/SSL for FTP connections
+	SkipTLS          bool   `json:"skip_tls,omitempty"` // Skip TLS certificate verification (optional)
+	NeedSSH          bool   `json:"need_ssh"`           // Whether to connect via SSH to target server
+	SSHPort          string `json:"ssh_port"`           // SSH connection port, default 22
+	SSHUser          string `json:"ssh_user"`           // SSH login username
+	SSHPassword      string `json:"ssh_password"`       // SSH login password
+	LogFilePath      string `json:"Xferlog_file_path"`  // vsftpd log file path for transfer stats
+	ListenPort       string `json:"listen_port"`        // Prometheus metrics HTTP service port, default 9100
+	CheckInterval    int    `json:"check_interval"`     // Monitoring check interval (seconds), default 30
+	VsftplogEnabled  bool   `json:"vsftplog_enabled"`   // Enable vsftpd log parsing
+	VsftplogFilePath string `json:"vsftplog_file_path"` // vsftpd detailed log file path
 }
 
-// ExporterState 维护导出器的运行时状态
-// 用于跟踪日志文件读取位置和文件句柄，支持日志轮转检测
+// ExporterState maintains the exporter's runtime state
+// Tracks log file read positions and handles, supports log rotation detection
 type ExporterState struct {
-	mu                sync.RWMutex // 保护并发访问的互斥锁
+	mu                sync.RWMutex // Mutex to protect concurrent access
 	lastProcessedTime time.Time
 	ctx               context.Context
 	cancel            context.CancelFunc
-	logFile           *os.File // 当前打开的日志文件句柄
-	lastPosition      int64    // 上次读取到的文件位置，用于增量读取
+	logFile           *os.File // Currently opened log file handle
+	lastPosition      int64    // Last file read position for incremental reading
 
-	// 新增字段用于跟踪传输统计
-	totalBytesUploaded   int64                // 累计上传字节数
-	totalBytesDownloaded int64                // 累计下载字节数
-	lastBandwidthCheck   time.Time            // 上次带宽检查时间
-	lastBytesTransferred int64                // 上次检查时的总传输字节数
-	activeTransfers      int                  // 当前活跃传输数
-	transferStartTimes   map[string]time.Time // 传输开始时间映射
+	// Fields for tracking transfer statistics
+	totalBytesUploaded   int64                // Total uploaded bytes
+	totalBytesDownloaded int64                // Total downloaded bytes
+	lastBandwidthCheck   time.Time            // Last bandwidth check time
+	lastBytesTransferred int64                // Total transferred bytes at last check
+	activeTransfers      int                  // Current active transfers count
+	transferStartTimes   map[string]time.Time // Transfer start times mapping
 
-	// === 基于vsftpd.log的新增状态跟踪字段 ===
+	// === State tracking fields based on vsftpd.log ===
 
-	// vsftpd日志文件相关
-	vsftpLogFile     *os.File // vsftpd.log文件句柄
-	vsftpLogPosition int64    // vsftpd.log上次读取位置
+	// vsftpd log file related
+	vsftpLogFile     *os.File // vsftpd.log file handle
+	vsftpLogPosition int64    // vsftpd.log last read position
 
-	// 客户端和用户活动跟踪
-	clientLastActivity map[string]time.Time // 客户端IP -> 最后活动时间
-	clientConnectTimes map[string]time.Time // 客户端IP -> 最后连接时间（用于计算登录延迟）
-	userClientMapping  map[string]string    // 用户名 -> 客户端IP映射
-	activeProcessIDs   map[string]time.Time // 进程ID -> 最后活动时间
+	// Client and user activity tracking
+	clientLastActivity map[string]time.Time // Client IP -> last activity time
+	clientConnectTimes map[string]time.Time // Client IP -> last connect time (for login delay)
+	userClientMapping  map[string]string    // Username -> Client IP mapping
+	activeProcessIDs   map[string]time.Time // Process ID -> last activity time
 
-	// 快速重连检测
-	clientLastConnect map[string]time.Time // 客户端IP -> 上次连接时间（用于检测快速重连）
+	// Rapid reconnection detection
+	clientLastConnect map[string]time.Time // Client IP -> last connect time (for rapid reconnect detection)
 
-	// 统计缓存（用于定期更新Gauge类型指标）
-	lastUniqueClientUpdate time.Time // 上次更新唯一客户端数量的时间
-	lastProcessUpdate      time.Time // 上次更新活跃进程数的时间
+	// Statistics cache for periodic Gauge metric updates
+	lastUniqueClientUpdate time.Time // Last unique clients count update time
+	lastProcessUpdate      time.Time // Last active processes count update time
 }
 
-// Prometheus指标定义
-// 这些指标用于监控vsftpd FTP服务器的各种状态和活动
+// Prometheus metric definitions
+// These metrics monitor various states and activities of the vsftpd FTP server
 var (
-	// ftpLoginSuccess 表示FTP服务器登录状态
-	// 值为1表示最近一次登录测试成功，0表示失败
+	// ftpLoginSuccess indicates FTP server login status
+	// Value of 1 indicates recent login test success, 0 indicates failure
 	ftpLoginSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_login_success",
 		Help: "Indicates if the login to the FTP server is successful (1 for success, 0 for failure).",
 	})
 
-	// ftpConnections 当前FTP连接总数
-	// 通过netstat命令统计得出
+	// ftpConnections current total FTP connections
+	// Obtained through netstat command statistics
 	ftpConnections = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_connections",
 		Help: "Current number of FTP connections.",
 	})
 
-	// establishedConnections 处于ESTABLISHED状态的FTP连接数
-	// 表示当前活跃的FTP数据传输连接
+	// establishedConnections number of FTP connections in ESTABLISHED state
+	// Indicates currently active FTP data transfer connections
 	establishedConnections = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_established_connections",
 		Help: "Number of ESTABLISHED FTP connections.",
 	})
 
-	// closeWaitConnections 处于CLOSE_WAIT状态的FTP连接数
-	// 表示等待关闭的连接，可能指示连接泄漏问题
+	// closeWaitConnections number of FTP connections in CLOSE_WAIT state
+	// Indicates connections waiting to close, may indicate connection leak issues
 	closeWaitConnections = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_close_wait_connections",
 		Help: "Number of CLOSE_WAIT FTP connections.",
 	})
 
-	// filesDownloaded 从FTP服务器下载的文件总数
-	// 从日志文件中解析得出的累计值
+	// filesDownloaded total files downloaded from FTP server
+	// Cumulative value parsed from log files
 	filesDownloaded = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_files_received_total",
 		Help: "Total number of files received (downloaded) from the FTP server.",
 	})
 
-	// filesUploaded 上传到FTP服务器的文件总数
-	// 从日志文件中解析得出的累计值
+	// filesUploaded total files uploaded to FTP server
+	// Cumulative value parsed from log files
 	filesUploaded = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_files_sent_total",
 		Help: "Total number of files sent (uploaded) to the FTP server.",
 	})
 
-	// ftpLoginTime 最后一次成功FTP登录的时间戳
-	// Unix时间戳格式，用于监控登录活动
+	// ftpLoginTime timestamp of the last successful FTP login
+	// Unix timestamp format, used to monitor login activity
 	ftpLoginTime = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_last_login_time",
 		Help: "Timestamp of last successful FTP login.",
 	})
 
-	// ftpLoginTotal FTP登录总次数计数器
-	// 从日志文件中解析的累计登录次数
+	// ftpLoginTotal FTP login total count counter
+	// Cumulative login count parsed from log files
 	ftpLoginTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_login_total",
 		Help: "Total number of FTP logins.",
 	})
 
-	// ftpUploadTotal FTP上传操作总次数计数器
-	// 从日志文件中解析的累计上传次数
+	// ftpUploadTotal FTP upload operations total count counter
+	// Cumulative upload count parsed from log files
 	ftpUploadTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_upload_total",
 		Help: "Total number of FTP uploads.",
 	})
 
-	// ftpDownloadTotal FTP下载操作总次数计数器
-	// 从日志文件中解析的累计下载次数
+	// ftpDownloadTotal FTP download operations total count counter
+	// Cumulative download count parsed from log files
 	ftpDownloadTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_download_total",
 		Help: "Total number of FTP downloads.",
 	})
 
-	// 新增的监控指标
+	// New monitoring metrics
 
-	// uploadBytesTotal 上传字节总数
-	// 统计上传的总字节数
+	// uploadBytesTotal total uploaded bytes
+	// Statistics of total bytes uploaded
 	uploadBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_upload_bytes_total",
 		Help: "Total number of bytes uploaded.",
 	})
 
-	// downloadBytesTotal 下载字节总数
-	// 统计下载的总字节数
+	// downloadBytesTotal total downloaded bytes
+	// Statistics of total bytes downloaded
 	downloadBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_download_bytes_total",
 		Help: "Total number of bytes downloaded.",
 	})
 
-	// transferDurationSeconds 文件传输耗时分布（histogram）
-	// 记录文件传输操作的耗时分布
+	// transferDurationSeconds file transfer duration distribution (histogram)
+	// Records the duration distribution of file transfer operations
 	transferDurationSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "vsftp_transfer_duration_seconds",
 		Help:    "Duration of file transfers in seconds.",
-		Buckets: prometheus.ExponentialBuckets(0.1, 2, 10), // 0.1s到102.4s的指数分布
+		Buckets: prometheus.ExponentialBuckets(0.1, 2, 10), // Exponential distribution from 0.1s to 102.4s
 	})
 
-	// concurrentTransfers 当前并发传输数
-	// 实时统计正在进行的文件传输数量
+	// concurrentTransfers current number of concurrent transfers
+	// Real-time statistics of ongoing file transfers
 	concurrentTransfers = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_concurrent_transfers",
 		Help: "Current number of concurrent file transfers.",
 	})
 
-	// averageTransferSpeed 平均传输速度
-	// 计算最近一段时间的平均传输速度（字节/秒）
+	// averageTransferSpeed average transfer speed
+	// Calculates average transfer speed in recent period (bytes/second)
 	averageTransferSpeed = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_average_transfer_speed_bytes_per_second",
 		Help: "Average transfer speed in bytes per second.",
 	})
 
-	// failedLoginsTotal 登录失败总次数
-	// 统计FTP登录失败的累计次数
+	// failedLoginsTotal total failed login attempts
+	// Statistics of cumulative FTP login failures
 	failedLoginsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_failed_logins_total",
 		Help: "Total number of failed login attempts.",
 	})
 
-	// transferErrorsTotal 传输错误总数（按类型分类）
-	// 统计不同类型的传输错误次数
+	// transferErrorsTotal total transfer errors (by type)
+	// Statistics of different types of transfer errors
 	transferErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_transfer_errors_total",
 		Help: "Total number of transfer errors by type.",
 	}, []string{"type"})
 
-	// connectionTimeoutsTotal 连接超时总次数
-	// 统计FTP连接超时的累计次数
+	// connectionTimeoutsTotal total connection timeouts
+	// Statistics of cumulative FTP connection timeouts
 	connectionTimeoutsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_connection_timeouts_total",
 		Help: "Total number of connection timeouts.",
 	})
 
-	// authenticationErrorsTotal 认证错误总次数
-	// 统计认证失败的累计次数
+	// authenticationErrorsTotal total authentication errors
+	// Statistics of cumulative authentication failures
 	authenticationErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_authentication_errors_total",
 		Help: "Total number of authentication errors.",
 	})
 
-	// maxConnectionsReachedTotal 达到最大连接数限制的次数
-	// 统计服务器达到最大连接数限制的累计次数
+	// maxConnectionsReachedTotal times max connections limit reached
+	// Statistics of cumulative times server reached max connections limit
 	maxConnectionsReachedTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_max_connections_reached_total",
 		Help: "Total number of times max connections limit was reached.",
 	})
 
-	// bandwidthUsage 带宽使用率
-	// 实时监控当前的带宽使用情况（字节/秒）
+	// bandwidthUsage bandwidth usage rate
+	// Real-time monitoring of current bandwidth usage (bytes/second)
 	bandwidthUsage = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_bandwidth_usage_bytes_per_second",
 		Help: "Current bandwidth usage in bytes per second.",
 	})
 
-	// fileCountByExtension 按文件扩展名统计的文件数量
-	// 统计不同文件扩展名的传输次数
+	// fileCountByExtension file count by extension
+	// Statistics of transfer counts by file extension
 	fileCountByExtension = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_file_count_by_extension",
 		Help: "Number of files transferred by extension.",
 	}, []string{"extension"})
 
-	// === 基于vsftpd.log的新增监控指标 ===
+	// === New monitoring metrics based on vsftpd.log ===
 
-	// clientConnectionsTotal 按客户端IP统计连接总数
-	// 从vsftpd.log中解析CONNECT事件，按客户端IP分类统计
+	// clientConnectionsTotal connections total by client IP
+	// Parses CONNECT events from vsftpd.log, categorized by client IP
 	clientConnectionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_client_connections_total",
 		Help: "Total number of connections by client IP address.",
 	}, []string{"client_ip"})
 
-	// uniqueClients 当前活跃的唯一客户端数量
-	// 统计最近一段时间内有活动的不同客户端IP数量
+	// uniqueClients current active unique clients count
+	// Statistics of different client IPs with activity in recent period
 	uniqueClients = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_unique_clients",
 		Help: "Number of unique client IP addresses with recent activity.",
 	})
 
-	// userLoginsTotal 按用户名统计登录总数
-	// 从vsftpd.log中解析OK LOGIN事件，按用户名分类统计
+	// userLoginsTotal logins total by username
+	// Parses OK LOGIN events from vsftpd.log, categorized by username
 	userLoginsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_user_logins_total",
 		Help: "Total number of successful logins by username.",
 	}, []string{"username"})
 
-	// userConnectionsTotal 按用户名统计连接总数
-	// 关联CONNECT和LOGIN事件，按用户名统计连接数
+	// userConnectionsTotal connections total by username
+	// Associates CONNECT and LOGIN events, statistics by username
 	userConnectionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_user_connections_total",
 		Help: "Total number of connections by username.",
 	}, []string{"username"})
 
-	// connectionLoginDelaySeconds 连接到登录的时间延迟分布
-	// 统计从CONNECT事件到OK LOGIN事件的时间间隔
+	// connectionLoginDelaySeconds connection to login delay distribution
+	// Statistics of time interval from CONNECT event to OK LOGIN event
 	connectionLoginDelaySeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "vsftp_connection_login_delay_seconds",
 		Help:    "Time delay between connection and successful login in seconds.",
-		Buckets: prometheus.ExponentialBuckets(0.001, 2, 15), // 1ms到16s的指数分布
+		Buckets: prometheus.ExponentialBuckets(0.001, 2, 15), // Exponential distribution from 1ms to 16s
 	})
 
-	// rapidReconnectionsTotal 快速重连次数统计
-	// 统计30秒内同一IP的重复连接次数
+	// rapidReconnectionsTotal rapid reconnections count
+	// Statistics of repeated connections from same IP within 30 seconds
 	rapidReconnectionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vsftp_rapid_reconnections_total",
 		Help: "Total number of rapid reconnections (same IP within 30 seconds).",
 	})
 
-	// activeProcesses 当前活跃的vsftpd进程数
-	// 从vsftpd.log中统计不同进程ID的数量
+	// activeProcesses current active vsftpd processes count
+	// Statistics of different process IDs from vsftpd.log
 	activeProcesses = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "vsftp_active_processes",
 		Help: "Number of active vsftpd processes based on log entries.",
 	})
 
-	// clientActivityByHour 按小时统计客户端活动
-	// 统计不同时间段的客户端连接活动
+	// clientActivityByHour client activity by hour
+	// Statistics of client connection activity by time period
 	clientActivityByHour = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_client_activity_by_hour",
 		Help: "Client connection activity by hour of day.",
 	}, []string{"hour"})
 
-	// loginFailuresByClient 按客户端IP统计登录失败次数
-	// 从vsftpd.log中解析登录失败事件
+	// loginFailuresByClient login failures by client IP
+	// Parses login failure events from vsftpd.log
 	loginFailuresByClient = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_login_failures_by_client",
 		Help: "Number of login failures by client IP address.",
 	}, []string{"client_ip"})
 
-	// clientFilesTotal 按客户端IP统计上传和下载文件数量
-	// 从xferlog中解析文件传输记录，按客户端IP和传输方向分类统计
+	// clientFilesTotal files total by client IP for uploads and downloads
+	// Parses file transfer records from xferlog, categorized by client IP and direction
 	clientFilesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vsftp_client_files_total",
 		Help: "Total number of files transferred by client IP address and direction.",
 	}, []string{"client_ip", "direction"})
 )
 
-// init 初始化函数，在程序启动时自动执行
-// 负责向Prometheus注册所有的监控指标
+// init initialization function, automatically executed on program start
+// Registers all monitoring metrics with Prometheus
 func init() {
-	// 注册所有Prometheus指标到默认注册表
-	// 这些指标将通过/metrics端点暴露给Prometheus
-	prometheus.MustRegister(ftpLoginSuccess)        // FTP登录状态指标
-	prometheus.MustRegister(ftpConnections)         // FTP连接数指标
-	prometheus.MustRegister(establishedConnections) // 活跃连接数指标
-	prometheus.MustRegister(closeWaitConnections)   // 等待关闭连接数指标
-	prometheus.MustRegister(filesDownloaded)        // 文件下载总数指标
-	prometheus.MustRegister(filesUploaded)          // 文件上传总数指标
-	prometheus.MustRegister(ftpLoginTime)           // 最后登录时间指标
-	prometheus.MustRegister(ftpLoginTotal)          // 登录总次数计数器
-	prometheus.MustRegister(ftpUploadTotal)         // 上传总次数计数器
-	prometheus.MustRegister(ftpDownloadTotal)       // 下载总次数计数器
+	// Register all Prometheus metrics to the default registry
+	// These metrics will be exposed through the /metrics endpoint
+	prometheus.MustRegister(ftpLoginSuccess)        // FTP login status metric
+	prometheus.MustRegister(ftpConnections)         // FTP connections count metric
+	prometheus.MustRegister(establishedConnections) // Active connections count metric
+	prometheus.MustRegister(closeWaitConnections)   // Close-wait connections count metric
+	prometheus.MustRegister(filesDownloaded)        // Downloaded files total metric
+	prometheus.MustRegister(filesUploaded)          // Uploaded files total metric
+	prometheus.MustRegister(ftpLoginTime)           // Last login time metric
+	prometheus.MustRegister(ftpLoginTotal)          // Login total count counter
+	prometheus.MustRegister(ftpUploadTotal)         // Upload total count counter
+	prometheus.MustRegister(ftpDownloadTotal)       // Download total count counter
 
-	// 注册新增的监控指标
-	prometheus.MustRegister(uploadBytesTotal)           // 上传字节总数指标
-	prometheus.MustRegister(downloadBytesTotal)         // 下载字节总数指标
-	prometheus.MustRegister(transferDurationSeconds)    // 传输耗时分布指标
-	prometheus.MustRegister(concurrentTransfers)        // 并发传输数指标
-	prometheus.MustRegister(averageTransferSpeed)       // 平均传输速度指标
-	prometheus.MustRegister(failedLoginsTotal)          // 登录失败总次数指标
-	prometheus.MustRegister(transferErrorsTotal)        // 传输错误总数指标
-	prometheus.MustRegister(connectionTimeoutsTotal)    // 连接超时总次数指标
-	prometheus.MustRegister(authenticationErrorsTotal)  // 认证错误总次数指标
-	prometheus.MustRegister(maxConnectionsReachedTotal) // 最大连接数限制次数指标
-	prometheus.MustRegister(bandwidthUsage)             // 带宽使用率指标
-	prometheus.MustRegister(fileCountByExtension)       // 按扩展名统计文件数量指标
+	// Register new monitoring metrics
+	prometheus.MustRegister(uploadBytesTotal)           // Upload bytes total metric
+	prometheus.MustRegister(downloadBytesTotal)         // Download bytes total metric
+	prometheus.MustRegister(transferDurationSeconds)    // Transfer duration distribution metric
+	prometheus.MustRegister(concurrentTransfers)        // Concurrent transfers count metric
+	prometheus.MustRegister(averageTransferSpeed)       // Average transfer speed metric
+	prometheus.MustRegister(failedLoginsTotal)          // Failed logins total metric
+	prometheus.MustRegister(transferErrorsTotal)        // Transfer errors total metric
+	prometheus.MustRegister(connectionTimeoutsTotal)    // Connection timeouts total metric
+	prometheus.MustRegister(authenticationErrorsTotal)  // Authentication errors total metric
+	prometheus.MustRegister(maxConnectionsReachedTotal) // Max connections limit reached metric
+	prometheus.MustRegister(bandwidthUsage)             // Bandwidth usage metric
+	prometheus.MustRegister(fileCountByExtension)       // File count by extension metric
 
-	// 注册基于vsftpd.log的新增监控指标
-	prometheus.MustRegister(clientConnectionsTotal)      // 按客户端IP统计连接总数指标
-	prometheus.MustRegister(uniqueClients)               // 唯一客户端数量指标
-	prometheus.MustRegister(userLoginsTotal)             // 按用户名统计登录总数指标
-	prometheus.MustRegister(userConnectionsTotal)        // 按用户名统计连接总数指标
-	prometheus.MustRegister(connectionLoginDelaySeconds) // 连接到登录延迟分布指标
-	prometheus.MustRegister(rapidReconnectionsTotal)     // 快速重连次数指标
-	prometheus.MustRegister(activeProcesses)             // 活跃进程数指标
-	prometheus.MustRegister(clientActivityByHour)        // 按小时统计客户端活动指标
-	prometheus.MustRegister(loginFailuresByClient)       // 按客户端IP统计登录失败指标
-	prometheus.MustRegister(clientFilesTotal)            // 按客户端IP统计文件传输数量指标
+	// Register new monitoring metrics based on vsftpd.log
+	prometheus.MustRegister(clientConnectionsTotal)      // Connections total by client IP metric
+	prometheus.MustRegister(uniqueClients)               // Unique clients count metric
+	prometheus.MustRegister(userLoginsTotal)             // Logins total by username metric
+	prometheus.MustRegister(userConnectionsTotal)        // Connections total by username metric
+	prometheus.MustRegister(connectionLoginDelaySeconds) // Connection to login delay distribution metric
+	prometheus.MustRegister(rapidReconnectionsTotal)     // Rapid reconnections count metric
+	prometheus.MustRegister(activeProcesses)             // Active processes count metric
+	prometheus.MustRegister(clientActivityByHour)        // Client activity by hour metric
+	prometheus.MustRegister(loginFailuresByClient)       // Login failures by client IP metric
+	prometheus.MustRegister(clientFilesTotal)            // Files total by client IP metric
 }
 
-// main 程序主入口函数
-// 负责初始化配置、启动监控协程、设置HTTP服务器和处理优雅关闭
+// main Program main entry function
+// Handles config initialization, monitoring goroutine startup, HTTP server setup and graceful shutdown
 func main() {
-	// 解析命令行参数
-	configFile := flag.String("config", "config.json", "配置文件路径")
+	// Parse command line arguments
+	configFile := flag.String("config", "config.json", "Configuration file path")
 	flag.Parse()
 
-	// 第一步：加载并验证配置文件
-	// 配置文件包含FTP服务器信息、监控参数等关键设置
-	logger.Info("正在加载配置文件: %s", *configFile)
+	// Step 1: Load and validate configuration file
+	// Config file contains FTP server info, monitoring parameters and other key settings
+	logger.Info("Loading configuration file: %s", *configFile)
 	config, err := loadAndValidateConfig(*configFile)
 	if err != nil {
-		logger.Error("配置加载失败: %v", err)
+		logger.Error("Configuration loading failed: %v", err)
 		os.Exit(1)
 	}
-	logger.Info("配置加载成功，目标服务器: %s:%s", config.TargetHost, config.FTPPort)
+	logger.Info("Configuration loaded successfully, target server: %s:%s", config.TargetHost, config.FTPPort)
 
-	// 第二步：初始化导出器运行时状态
-	// 用于维护日志文件句柄和读取位置等状态信息
+	// Step 2: Initialize exporter runtime state
+	// Maintains log file handles and read positions and other state info
 	state := &ExporterState{
 		transferStartTimes: make(map[string]time.Time),
 		lastBandwidthCheck: time.Now(),
 	}
 
-	// 第三步：创建上下文用于优雅关闭
-	// 当收到终止信号时，通过context通知所有协程停止工作
+	// Step 3: Create context for graceful shutdown
+	// When termination signal received, notify all goroutines to stop via context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 第四步：设置系统信号处理
-	// 监听SIGINT(Ctrl+C)和SIGTERM信号，用于优雅关闭程序
+	// Step 4: Setup system signal handling
+	// Listen for SIGINT(Ctrl+C) and SIGTERM signals for graceful program shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	logger.Info("信号处理器已设置")
+	logger.Info("Signal handler configured")
 
-	// 第五步：启动后台监控协程
-	// 定期执行FTP连接测试、连接数统计和日志解析等监控任务
-	logger.Info("启动监控协程，检查间隔: %d秒", config.CheckInterval)
+	// Step 5: Start background monitoring goroutine
+	// Periodically execute monitoring tasks like FTP connection tests, connection count stats and log parsing
+	logger.Info("Starting monitoring goroutine, check interval: %d seconds", config.CheckInterval)
 	go func() {
-		// 创建定时器，按配置的间隔执行监控任务
+		// Create ticker to execute monitoring tasks at configured interval
 		ticker := time.NewTicker(time.Duration(config.CheckInterval) * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
-				// 收到停止信号，退出监控协程
-				logger.Info("监控协程收到停止信号")
+				// Received stop signal, exit monitoring goroutine
+				logger.Info("Monitoring goroutine received stop signal")
 				return
 			case <-ticker.C:
-				// 定时器触发，执行监控任务
+				// Ticker triggered, execute monitoring tasks
 
-				// 任务1：检查FTP服务器连接状态
-				// 尝试登录FTP服务器以验证服务可用性
+				// Task 1: Check FTP server connection status
+				// Try to login to FTP server to verify service availability
 				if err := checkFTPLogin(config, state); err != nil {
-					logger.Error("FTP连接检查失败: %v", err)
-					ftpLoginSuccess.Set(0) // 设置登录失败状态
+					logger.Error("FTP connection check failed: %v", err)
+					ftpLoginSuccess.Set(0) // Set login failure status
 				} else {
-					ftpLoginSuccess.Set(1) // 设置登录成功状态
+					ftpLoginSuccess.Set(1) // Set login success status
 				}
 
-				// 任务2：统计当前FTP连接数
-				// 通过netstat命令获取网络连接状态
+				// Task 2: Count current FTP connections
+				// Get network connection status via netstat command
 				if err := checkConnections(config, state); err != nil {
-					logger.Error("连接检查失败: %v", err)
+					logger.Error("Connection check failed: %v", err)
 				}
 
-				// 任务3：解析FTP日志文件
-				// 从vsftpd日志中提取传输统计信息
+				// Task 3: Parse FTP log file
+				// Extract transfer statistics from vsftpd log
 				if config.LogFilePath != "" {
 					if err := parseFTPLog(config, config.LogFilePath, state); err != nil {
-						logger.Error("解析FTP日志失败: %v", err)
+						logger.Error("Failed to parse FTP log: %v", err)
 					}
 				}
 
-				// 任务4：解析vsftpd详细日志文件
-				// 从vsftpd.log中提取连接和登录统计信息
+				// Task 4: Parse vsftpd detailed log file
+				// Extract connection and login statistics from vsftpd.log
 				if config.VsftplogEnabled && config.VsftplogFilePath != "" {
 					if err := parseVsftpdLog(config, config.VsftplogFilePath, state); err != nil {
-						logger.Error("解析vsftpd日志失败: %v", err)
+						logger.Error("Failed to parse vsftpd log: %v", err)
 					}
 				}
 			}
 		}
 	}()
 
-	// 第六步：配置并启动HTTP服务器
-	// 提供Prometheus metrics端点和健康检查端点
+	// Step 6: Configure and start HTTP server
+	// Provides Prometheus metrics endpoint and health check endpoint
 	server := &http.Server{
-		Addr:    ":" + config.ListenPort, // 监听配置的端口
-		Handler: nil,                     // 使用默认的HTTP多路复用器
+		Addr:    ":" + config.ListenPort, // Listen on configured port
+		Handler: nil,                     // Use default HTTP multiplexer
 	}
 
-	// 注册HTTP路由处理器
-	http.Handle("/metrics", promhttp.Handler())    // Prometheus指标端点
-	http.HandleFunc("/health", healthCheckHandler) // 健康检查端点
+	// Register HTTP route handlers
+	http.Handle("/metrics", promhttp.Handler())    // Prometheus metrics endpoint
+	http.HandleFunc("/health", healthCheckHandler) // Health check endpoint
 
-	// 在单独的协程中启动HTTP服务器，避免阻塞主线程
+	// Start HTTP server in separate goroutine to avoid blocking main thread
 	go func() {
-		logger.Info("Exporter 启动，监听端口 %s", config.ListenPort)
+		logger.Info("Exporter started, listening on port %s", config.ListenPort)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			// 如果不是正常关闭导致的错误，则记录错误并退出
-			logger.Error("HTTP服务器启动失败: %v", err)
+			// If error is not due to normal shutdown, log error and exit
+			logger.Error("HTTP server failed to start: %v", err)
 			os.Exit(1)
 		}
 	}()
 
-	// 第七步：等待终止信号并执行优雅关闭
-	// 程序将在此处阻塞，直到收到SIGINT或SIGTERM信号
+	// Step 7: Wait for termination signal and execute graceful shutdown
+	// Program will block here until SIGINT or SIGTERM signal received
 	<-sigChan
-	logger.Info("收到关闭信号，开始优雅关闭...")
+	logger.Info("Received shutdown signal, starting graceful shutdown...")
 
-	// 开始优雅关闭流程
-	logger.Info("正在关闭服务器...")
-	// 取消context，通知所有协程停止工作
+	// Begin graceful shutdown process
+	logger.Info("Shutting down server...")
+	// Cancel context, notify all goroutines to stop working
 	cancel()
 
-	// 清理资源：关闭日志文件句柄
+	// Clean up resources: close log file handles
 	if state.logFile != nil {
 		if err := state.logFile.Close(); err != nil {
-			logger.Error("关闭日志文件失败: %v", err)
+			logger.Error("Failed to close log file: %v", err)
 		} else {
-			logger.Info("日志文件已关闭")
+			logger.Info("Log file closed")
 		}
 	}
 
-	// 优雅关闭HTTP服务器
-	// 给服务器5秒时间完成当前正在处理的请求
+	// Gracefully shut down HTTP server
+	// Give server 5 seconds to complete currently processing requests
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error("服务器关闭失败: %v", err)
+		logger.Error("Server shutdown failed: %v", err)
 	} else {
-		logger.Info("服务器已优雅关闭")
+		logger.Info("Server shut down gracefully")
 	}
 }
 
-// loadAndValidateConfig 加载并验证配置文件
+// loadAndValidateConfig Load and validate configuration file
 func loadAndValidateConfig(file string) (*Config, error) {
 	var config Config
 	configFile, err := os.Open(file)
 	if err != nil {
-		return nil, fmt.Errorf("打开配置文件失败: %w", err)
+		return nil, fmt.Errorf("Failed to open configuration file: %w", err)
 	}
 	defer configFile.Close()
 
 	byteValue, err := io.ReadAll(configFile)
 	if err != nil {
-		return nil, fmt.Errorf("读取配置文件失败: %w", err)
+		return nil, fmt.Errorf("Failed to read configuration file: %w", err)
 	}
 
 	err = json.Unmarshal(byteValue, &config)
 	if err != nil {
-		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+		return nil, fmt.Errorf("Failed to parse configuration file: %w", err)
 	}
 
-	// 设置默认值
+	// Set default values
 	if config.FTPPort == "" {
 		config.FTPPort = "21"
 	}
@@ -580,75 +583,75 @@ func loadAndValidateConfig(file string) (*Config, error) {
 		config.CheckInterval = 30
 	}
 
-	// 验证必需配置项
+	// Validate required configuration items
 	if config.TargetHost == "" {
-		return nil, fmt.Errorf("目标主机地址不能为空")
+		return nil, fmt.Errorf("Target host address cannot be empty")
 	}
-	// 验证目标主机地址格式
+	// Validate target host address format
 	if !isValidHost(config.TargetHost) {
-		return nil, fmt.Errorf("目标主机地址格式无效: %s", config.TargetHost)
+		return nil, fmt.Errorf("Invalid target host address format: %s", config.TargetHost)
 	}
 
 	if config.FTPUser == "" {
-		return nil, fmt.Errorf("FTP用户名不能为空")
+		return nil, fmt.Errorf("FTP username cannot be empty")
 	}
-	// 验证用户名长度和字符
+	// Validate username length and characters
 	if len(config.FTPUser) > 64 || !isValidUsername(config.FTPUser) {
-		return nil, fmt.Errorf("FTP用户名格式无效或过长")
+		return nil, fmt.Errorf("FTP username format invalid or too long")
 	}
 
 	if config.FTPPassword == "" {
-		return nil, fmt.Errorf("FTP密码不能为空")
+		return nil, fmt.Errorf("FTP password cannot be empty")
 	}
-	// 验证密码长度
+	// Validate password length
 	if len(config.FTPPassword) > 128 {
-		return nil, fmt.Errorf("FTP密码过长（最大128字符）")
+		return nil, fmt.Errorf("FTP password too long (max 128 characters)")
 	}
 
-	// 验证端口范围
+	// Validate port range
 	ftpPort, err := strconv.Atoi(config.FTPPort)
 	if err != nil {
-		return nil, fmt.Errorf("FTP端口号格式无效: %s", config.FTPPort)
+		return nil, fmt.Errorf("FTP port number format invalid: %s", config.FTPPort)
 	}
 	if ftpPort < 1 || ftpPort > 65535 {
-		return nil, fmt.Errorf("FTP端口必须在1-65535范围内")
+		return nil, fmt.Errorf("FTP port must be in range 1-65535")
 	}
 
 	listenPort, err := strconv.Atoi(config.ListenPort)
 	if err != nil {
-		return nil, fmt.Errorf("监听端口号格式无效: %s", config.ListenPort)
+		return nil, fmt.Errorf("Listen port number format invalid: %s", config.ListenPort)
 	}
 	if listenPort < 1 || listenPort > 65535 {
-		return nil, fmt.Errorf("监听端口必须在1-65535范围内")
+		return nil, fmt.Errorf("Listen port must be in range 1-65535")
 	}
 
-	// 验证检查间隔
+	// Validate check interval
 	if config.CheckInterval < 1 || config.CheckInterval > 3600 {
-		return nil, fmt.Errorf("检查间隔必须在1-3600秒范围内")
+		return nil, fmt.Errorf("Check interval must be in range 1-3600 seconds")
 	}
 
-	// 验证日志文件路径（如果提供）
+	// Validate log file path (if provided)
 	if config.LogFilePath != "" {
-		// 扩展路径（支持环境变量和相对路径）
+		// Expand path (support environment variables and relative paths)
 		expandedPath, err := expandLogFilePath(config.LogFilePath)
 		if err != nil {
-			return nil, fmt.Errorf("日志文件路径处理失败: %w", err)
+			return nil, fmt.Errorf("Log file path processing failed: %w", err)
 		}
-		// 更新配置中的路径为扩展后的绝对路径
+		// Update config path to expanded absolute path
 		config.LogFilePath = expandedPath
 
-		// 使用增强的日志文件检查函数
+		// Use enhanced log file check function
 		if err := checkLogFileAccess(config.LogFilePath); err != nil {
-			return nil, fmt.Errorf("日志文件路径验证失败: %w", err)
+			return nil, fmt.Errorf("Log file path validation failed: %w", err)
 		}
 	} else {
-		logger.Warn("未配置日志文件路径，将无法解析FTP传输日志")
+		logger.Warn("Log file path not configured, FTP transfer log parsing will be unavailable")
 	}
 
 	return &config, nil
 }
 
-// HealthStatus 健康检查状态结构
+// HealthStatus Health check status structure
 type HealthStatus struct {
 	Status        string    `json:"status"`
 	Timestamp     time.Time `json:"timestamp"`
@@ -660,12 +663,12 @@ type HealthStatus struct {
 var (
 	startTime       = time.Now()
 	lastHealthCheck time.Time
-	appVersion      = "1.0.0" // 应用版本号
+	appVersion      = "1.0.0" // Application version number
 )
 
-// healthCheckHandler 处理健康检查请求
-// 提供详细的HTTP健康检查端点，用于监控系统检查服务状态
-// 返回JSON格式的健康状态信息
+// healthCheckHandler Handle health check requests
+// Provides detailed HTTP health check endpoint for monitoring system to check service status
+// Returns health status information in JSON format
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	lastHealthCheck = time.Now()
 
@@ -684,172 +687,185 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(status); err != nil {
-		logger.Error("编码健康检查响应失败: %v", err)
+		logger.Error("Failed to encode health check response: %v", err)
 	}
 }
 
-// isValidHost 验证主机地址格式（IP地址或域名）
+// isValidHost Validate host address format (IP address or domain)
 func isValidHost(host string) bool {
-	// 检查是否为有效的IP地址
+	// Check if valid IP address
 	if net.ParseIP(host) != nil {
 		return true
 	}
-	// 检查是否为有效的域名
+	// Check if valid domain
 	if len(host) == 0 || len(host) > 253 {
 		return false
 	}
-	// 使用预编译的正则表达式验证域名格式
+	// Use pre-compiled regex to validate domain format
 	return domainRegex.MatchString(host)
 }
 
-// isValidUsername 验证用户名格式（字母、数字、下划线、连字符）
+// isValidUsername Validate username format (letters, numbers, underscore, hyphen)
 func isValidUsername(username string) bool {
 	if len(username) == 0 {
 		return false
 	}
-	// 使用预编译的正则表达式验证用户名格式
+	// Use pre-compiled regex to validate username format
 	return usernameRegex.MatchString(username)
 }
 
-// createSSHClient 创建SSH客户端连接
-// 根据配置建立到目标服务器的SSH连接，支持密码认证
-// 参数:
+// createSSHClient Create SSH client connection
+// Establish SSH connection to target server based on config, supports password authentication
+// Parameters:
 //
-//	config: 包含SSH连接信息的配置对象
+//	config: Configuration object containing SSH connection info
 //
-// 返回:
+// Returns:
 //
-//	*ssh.Client: 成功时返回SSH客户端，失败时返回nil
-//	error: 连接失败时返回错误信息
+//	*ssh.Client: Returns SSH client on success, nil on failure
+//	error: Returns error message on connection failure
 func createSSHClient(config *Config) (*ssh.Client, error) {
 
-	// 设置SSH客户端配置
+	// Setup SSH client configuration
 	sshConfig := &ssh.ClientConfig{
 		User: config.SSHUser,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(config.SSHPassword),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 注意：生产环境应该验证主机密钥
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Note: Production environment should verify host keys
 		Timeout:         10 * time.Second,
 	}
 
-	// 建立SSH连接
+	// Establish SSH connection
 	address := config.TargetHost + ":" + config.SSHPort
 	client, err := ssh.Dial("tcp", address, sshConfig)
 	if err != nil {
-		return nil, fmt.Errorf("SSH连接失败: %w", err)
+		return nil, fmt.Errorf("SSH connection failed: %w", err)
 	}
 
-	// 添加SSH连接成功的INFO日志
-	logger.Info("SSH连接成功: %s@%s:%s", config.SSHUser, config.TargetHost, config.SSHPort)
+	// Add INFO log for successful SSH connection
+	logger.Info("SSH connection successful: %s@%s:%s", config.SSHUser, config.TargetHost, config.SSHPort)
 
 	return client, nil
 }
 
-// executeSSHCommand 通过SSH执行远程命令
-// 在目标服务器上执行指定命令并返回输出结果
-// 参数:
+// executeSSHCommand Execute remote command via SSH
+// Execute specified command on target server and return output
+// Parameters:
 //
-//	client: SSH客户端连接
-//	command: 要执行的命令
+//	client: SSH client connection
+//	command: Command to execute
 //
-// 返回:
+// Returns:
 //
-//	string: 命令输出结果
-//	error: 执行失败时返回错误信息
+//	string: Command output result
+//	error: Returns error message on execution failure
 func executeSSHCommand(client *ssh.Client, command string) (string, error) {
-	// 创建SSH会话
+	// Create SSH session
 	session, err := client.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("创建SSH会话失败: %w", err)
+		return "", fmt.Errorf("Failed to create SSH session: %w", err)
 	}
 	defer session.Close()
 
-	// 执行命令并获取输出
+	// Execute command and get output
 	output, err := session.Output(command)
 	if err != nil {
-		return "", fmt.Errorf("执行SSH命令失败: %w", err)
+		return "", fmt.Errorf("Failed to execute SSH command: %w", err)
 	}
 
 	return string(output), nil
 }
 
-// checkFTPLogin 检查FTP服务器连接和登录状态
-// 尝试连接到配置的FTP服务器并使用提供的凭据进行登录
-// 用于验证FTP服务的可用性和认证配置的正确性
-// 参数:
+// checkFTPLogin Check FTP server connection and login status
+// Try to connect to configured FTP server and login with provided credentials
+// Used to verify FTP service availability and authentication configuration correctness
+// Parameters:
 //
-//	config: 包含FTP连接信息的配置对象
-//	state: 导出器状态对象，用于更新相关指标
+//	config: Configuration object containing FTP connection info
+//	state: Exporter state object for updating related metrics
 //
-// 返回:
+// Returns:
 //
-//	error: 如果连接或登录失败则返回错误，成功则返回nil
+//	error: Returns error if connection or login fails, nil on success
 func checkFTPLogin(config *Config, state *ExporterState) error {
-	// 设置连接超时
+	// Set connection timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// 建立到FTP服务器的连接
-	conn, err := ftp.Dial(config.TargetHost + ":" + config.FTPPort)
+	// Establish connection to FTP server
+	var conn *ftp.ServerConn
+	var err error
+
+	if config.TLS {
+		// Use TLS/FTPS connection
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: config.SkipTLS,
+		}
+		conn, err = ftp.Dial(config.TargetHost+":"+config.FTPPort, ftp.DialWithExplicitTLS(tlsConfig))
+	} else {
+		// Use standard FTP connection
+		conn, err = ftp.Dial(config.TargetHost + ":" + config.FTPPort)
+	}
+
 	if err != nil {
-		// 检查是否为超时错误
+		// Check if timeout error
 		if ctx.Err() == context.DeadlineExceeded {
 			connectionTimeoutsTotal.Inc()
-			return fmt.Errorf("连接FTP服务器超时: %w", err)
+			return fmt.Errorf("Connection to FTP server timed out: %w", err)
 		}
 		connectionTimeoutsTotal.Inc()
-		return fmt.Errorf("连接FTP服务器失败: %w", err)
+		return fmt.Errorf("Failed to connect to FTP server: %w", err)
 	}
-	defer conn.Quit() // 确保连接在函数结束时关闭
+	defer conn.Quit() // Ensure connection is closed when function ends
 
-	// 尝试使用配置的用户名和密码登录
+	// Try to login with configured username and password
 	err = conn.Login(config.FTPUser, config.FTPPassword)
 	if err != nil {
-		// 区分认证错误和其他登录失败
+		// Distinguish authentication errors from other login failures
 		if strings.Contains(err.Error(), "530") || strings.Contains(err.Error(), "authentication") || strings.Contains(err.Error(), "login") {
 			authenticationErrorsTotal.Inc()
 			failedLoginsTotal.Inc()
 		} else {
 			failedLoginsTotal.Inc()
 		}
-		return fmt.Errorf("FTP登录失败: %w", err)
+		return fmt.Errorf("FTP login failed: %w", err)
 	}
 
-	return nil // 登录成功
+	return nil // Login successful
 }
 
-// checkConnections 检查FTP服务器的网络连接状态
-// 根据配置决定是本地执行netstat还是通过SSH远程执行
-// 分别统计总连接数、已建立连接数和等待关闭连接数
-// 参数:
+// checkConnections Check FTP server network connection status
+// Decide whether to execute netstat locally or remotely via SSH based on configuration
+// Count total connections, established connections and close-wait connections separately
+// Parameters:
 //
-//	config: 包含FTP端口信息和SSH配置的配置对象
-//	state: 导出器状态对象（当前未使用但保留用于扩展）
+//	config: Configuration object containing FTP port info and SSH config
+//	state: Exporter state object (currently unused but reserved for extension)
 //
-// 返回:
+// Returns:
 //
-//	error: 如果执行netstat命令失败则返回错误，成功则返回nil
+//	error: Returns error if netstat command fails, nil on success
 func checkConnections(config *Config, state *ExporterState) error {
 	var output string
 
 	if config.NeedSSH {
-		// 通过SSH远程执行netstat命令
+		// Execute netstat command remotely via SSH
 
-		// 创建SSH客户端
+		// Create SSH client
 		sshClient, err := createSSHClient(config)
 		if err != nil {
-			return fmt.Errorf("创建SSH连接失败: %w", err)
+			return fmt.Errorf("Failed to create SSH connection: %w", err)
 		}
 		defer sshClient.Close()
 
-		// 远程执行netstat命令
+		// Execute netstat command remotely
 		output, err = executeSSHCommand(sshClient, "netstat -anp")
 		if err != nil {
-			return fmt.Errorf("SSH远程执行netstat命令失败: %w", err)
+			return fmt.Errorf("Failed to execute netstat command remotely via SSH: %w", err)
 		}
 	} else {
-		// 本地执行netstat命令
+		// Execute netstat command locally
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
@@ -857,50 +873,50 @@ func checkConnections(config *Config, state *ExporterState) error {
 		outputBytes, err := cmd.Output()
 		if err != nil {
 			if ctx.Err() == context.DeadlineExceeded {
-				return fmt.Errorf("netstat命令执行超时")
+				return fmt.Errorf("netstat command execution timed out")
 			}
-			return fmt.Errorf("执行netstat命令失败: %w", err)
+			return fmt.Errorf("Failed to execute netstat command: %w", err)
 		}
 		output = string(outputBytes)
 	}
 
-	// 记录完整的netstat输出（截取前100行避免日志过长）
+	// Log complete netstat output (truncate to first 100 lines to avoid overly long logs)
 	lines := strings.Split(output, "\n")
-	// 处理netstat输出（移除了DEBUG日志输出）
+	// Process netstat output (removed DEBUG log output)
 
-	// 解析netstat输出，统计连接数
-	totalConnections := 0 // 总连接数计数器
-	establishedCount := 0 // 已建立连接数计数器
-	closeWaitCount := 0   // 等待关闭连接数计数器
-	listenCount := 0      // 监听端口数计数器
-	otherStateCount := 0  // 其他状态连接数计数器
+	// Parse netstat output, count connections
+	totalConnections := 0 // Total connections counter
+	establishedCount := 0 // Established connections counter
+	closeWaitCount := 0   // Close-wait connections counter
+	listenCount := 0      // Listening ports counter
+	otherStateCount := 0  // Other state connections counter
 
-	// 遍历每一行，查找包含FTP端口的连接
+	// Iterate through each line, find connections containing FTP port
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
 
-		// 检查是否包含FTP端口，支持多种格式匹配
+		// Check if contains FTP port, supports multiple format matching
 		portPattern := ":" + config.FTPPort
 		if strings.Contains(line, portPattern) {
-			// 检查是否为vsftpd进程的连接
+			// Check if connection is from vsftpd process
 			if strings.Contains(line, "vsftpd") || strings.Contains(line, "ftp") {
-				totalConnections++ // 发现FTP端口连接，总数加1
+				totalConnections++ // Found FTP port connection, increment total count
 
-				// 根据连接状态进行分类统计
+				// Classify and count by connection state
 				if strings.Contains(line, "ESTABLISHED") {
-					establishedCount++ // 已建立的连接
+					establishedCount++ // Established connection
 				} else if strings.Contains(line, "CLOSE_WAIT") {
-					closeWaitCount++ // 等待关闭的连接
+					closeWaitCount++ // Connection waiting to close
 				} else if strings.Contains(line, "LISTEN") {
-					listenCount++ // 监听端口
+					listenCount++ // Listening port
 				} else {
 					otherStateCount++
 				}
 			} else {
-				// 即使没有进程信息，也尝试按端口匹配
-				// 这是为了兼容某些系统上netstat -p可能需要root权限的情况
+				// Try to match by port even without process info
+				// This is for compatibility with systems where netstat -p may require root permissions
 				if strings.Contains(line, "tcp") && strings.Contains(line, portPattern) {
 					totalConnections++
 
@@ -918,179 +934,179 @@ func checkConnections(config *Config, state *ExporterState) error {
 		}
 	}
 
-	// 更新Prometheus指标
-	ftpConnections.Set(float64(totalConnections))         // 设置总连接数指标
-	establishedConnections.Set(float64(establishedCount)) // 设置已建立连接数指标
-	closeWaitConnections.Set(float64(closeWaitCount))     // 设置等待关闭连接数指标
+	// Update Prometheus metrics
+	ftpConnections.Set(float64(totalConnections))         // Set total connections metric
+	establishedConnections.Set(float64(establishedCount)) // Set established connections metric
+	closeWaitConnections.Set(float64(closeWaitCount))     // Set close-wait connections metric
 
-	return nil // 统计完成
+	return nil // Count complete
 }
 
-// extractTimestamp 从日志行中提取时间戳
-// 支持多种常见的时间戳格式，将其转换为Unix时间戳
-// 用于跟踪FTP活动的最后发生时间
-// 参数:
+// extractTimestamp Extract timestamp from log line
+// Supports multiple common timestamp formats, converts to Unix timestamp
+// Used to track last occurrence time of FTP activity
+// Parameters:
 //
-//	line: 包含时间戳的日志行文本
+//	line: Log line text containing timestamp
 //
-// 返回:
+// Returns:
 //
-//	int64: 成功解析则返回Unix时间戳，失败则返回当前时间的Unix时间戳
+//	int64: Returns Unix timestamp if parsed successfully, current time Unix timestamp if failed
 func extractTimestamp(line string) int64 {
-	// 定义多种时间戳格式和对应的解析模式
+	// Define multiple timestamp formats and corresponding parse patterns
 	timeFormats := []struct {
 		regex  *regexp.Regexp
 		layout string
 	}{
-		// 格式1：YYYY-MM-DD HH:MM:SS
+		// Format 1:YYYY-MM-DD HH:MM:SS
 		{regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})`), "2006-01-02 15:04:05"},
 
-		// 格式2：Mon Jan _2 HH:MM:SS YYYY (vsftpd常用格式，支持单数字日期)
+		// Format 2:Mon Jan _2 HH:MM:SS YYYY (vsftpd common format, supports single digit dates)
 		{regexp.MustCompile(`(\w{3} \w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4})`), "Mon Jan _2 15:04:05 2006"},
 
-		// 格式3：Mon Jan 02 15:04:05 2006 (标准syslog格式，双数字日期)
+		// Format 3:Mon Jan 02 15:04:05 2006 (Standard syslog format, double digit dates)
 		{regexp.MustCompile(`(\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2} \d{4})`), "Mon Jan 02 15:04:05 2006"},
 
-		// 格式4：DD/MM/YYYY HH:MM:SS
+		// Format 4:DD/MM/YYYY HH:MM:SS
 		{regexp.MustCompile(`(\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})`), "02/01/2006 15:04:05"},
 
-		// 格式5：MM/DD/YYYY HH:MM:SS
+		// Format 5:MM/DD/YYYY HH:MM:SS
 		{regexp.MustCompile(`(\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})`), "01/02/2006 15:04:05"},
 
-		// 格式6：YYYY/MM/DD HH:MM:SS
+		// Format 6:YYYY/MM/DD HH:MM:SS
 		{regexp.MustCompile(`(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})`), "2006/01/02 15:04:05"},
 	}
 
-	// 尝试解析各种格式，使用本地时区
+	// Try parsing various formats, use local timezone
 	for _, format := range timeFormats {
 		if match := format.regex.FindString(line); match != "" {
 			if t, err := time.ParseInLocation(format.layout, match, time.Local); err == nil {
-				return t.Unix() // 返回Unix时间戳
+				return t.Unix() // Return Unix timestamp
 			}
 		}
 	}
 
-	// 如果所有格式都无法解析，返回当前时间的Unix时间戳
-	// 这样可以避免显示"56年前"这样的错误时间
+	// If all formats cannot be parsed, return current time Unix timestamp
+	// This avoids displaying incorrect times like "56 years ago"
 	return time.Now().Unix()
 }
 
-// parseTransferLog 解析传输日志，提取字节数、文件名和传输时间
+// parseTransferLog Parse transfer log, extract bytes, filename and transfer time
 func parseTransferLog(line, direction string) (bytes int64, filename string, duration float64) {
-	// 示例日志格式："OK UPLOAD: Client "192.168.1.100", "/path/to/file.txt", 1024 bytes, 1.5 seconds"
-	// 或者："OK DOWNLOAD: Client "192.168.1.100", "/path/to/file.txt", 2048 bytes, 2.3 seconds"
+	// Example log format:"OK UPLOAD: Client "192.168.1.100", "/path/to/file.txt", 1024 bytes, 1.5 seconds"
+	// Or:"OK DOWNLOAD: Client "192.168.1.100", "/path/to/file.txt", 2048 bytes, 2.3 seconds"
 
-	// 提取字节数
+	// Extract bytes
 	if bytesMatch := regexp.MustCompile(`(\d+)\s+bytes`).FindStringSubmatch(line); len(bytesMatch) > 1 {
 		if b, err := strconv.ParseInt(bytesMatch[1], 10, 64); err == nil {
 			bytes = b
 		}
 	}
 
-	// 提取文件名
+	// Extract filename
 	if filenameMatch := regexp.MustCompile(`"([^"]+\.[^"]+)"`).FindStringSubmatch(line); len(filenameMatch) > 1 {
 		filename = filenameMatch[1]
 	}
 
-	// 提取传输时间
+	// Extract transfer time
 	if durationMatch := regexp.MustCompile(`([0-9.]+)\s+seconds`).FindStringSubmatch(line); len(durationMatch) > 1 {
 		if d, err := strconv.ParseFloat(durationMatch[1], 64); err == nil {
 			duration = d
 		}
 	}
 
-	// 如果没有找到具体信息，使用默认值
+	// If specific info not found, use default values
 	if bytes == 0 {
-		bytes = 1024 // 默认1KB
+		bytes = 1024 // Default 1KB
 	}
 	if filename == "" {
 		filename = "unknown.txt"
 	}
 	if duration == 0 {
-		duration = 1.0 // 默认1秒
+		duration = 1.0 // Default 1 second
 	}
 
 	return bytes, filename, duration
 }
 
-// extractFileExtension 从文件名中提取扩展名
+// extractFileExtension Extract extension from filename
 func extractFileExtension(filename string) string {
 	if filename == "" {
 		return "no_extension"
 	}
 
-	// 获取文件扩展名
+	// Get file extension
 	ext := strings.ToLower(filepath.Ext(filename))
 
-	// 如果没有扩展名，返回"no_extension"
+	// If no extension, return"no_extension"
 	if ext == "" {
 		return "no_extension"
 	}
 
-	// 返回所有扩展名（去掉点号）
-	return ext[1:] // 去掉开头的点号
+	// Return all extensions (remove dot)
+	return ext[1:] // Remove leading dot
 }
 
-// expandLogFilePath 扩展日志文件路径，支持环境变量和相对路径
-// 参数:
+// expandLogFilePath Expand log file path, support environment variables and relative paths
+// Parameters:
 //
-//	path: 原始路径，可能包含环境变量或相对路径
+//	path: Original path, may contain environment variables or relative paths
 //
-// 返回:
+// Returns:
 //
-//	string: 扩展后的绝对路径
-//	error: 如果路径处理失败则返回错误
+//	string: Expanded absolute path
+//	error: Returns error if path processing fails
 func expandLogFilePath(path string) (string, error) {
 	if path == "" {
-		return "", fmt.Errorf("日志文件路径不能为空")
+		return "", fmt.Errorf("Log file path cannot be empty")
 	}
 
-	// 扩展环境变量
+	// Expand environment variables
 	expandedPath := os.ExpandEnv(path)
 
-	// 转换为绝对路径
+	// Convert to absolute path
 	absPath, err := filepath.Abs(expandedPath)
 	if err != nil {
-		return "", fmt.Errorf("无法转换为绝对路径: %w", err)
+		return "", fmt.Errorf("Unable to convert to absolute path: %w", err)
 	}
 
-	// 清理路径（移除多余的分隔符等）
+	// Clean path (remove redundant separators etc)
 	cleanPath := filepath.Clean(absPath)
 
 	return cleanPath, nil
 }
 
-// testLogFileAccess 测试日志文件的访问性
-// 这是一个独立的测试函数，可以在程序启动时或需要时调用
-// 参数:
+// testLogFileAccess Test log file accessibility
+// This is a standalone test function that can be called at program start or as needed
+// Parameters:
 //
-//	logPath: 日志文件路径
+//	logPath: Log file path
 //
-// 返回:
+// Returns:
 //
-//	bool: 文件是否可访问
-//	string: 详细的测试结果信息
+//	bool: Whether file is accessible
+//	string: Detailed test result information
 func testLogFileAccess(logPath string) (bool, string) {
 	var results []string
 
-	// 测试路径扩展
+	// Test path expansion
 	expandedPath, err := expandLogFilePath(logPath)
 	if err != nil {
-		return false, fmt.Sprintf("路径扩展失败: %v", err)
+		return false, fmt.Sprintf("Path expansion failed: %v", err)
 	}
-	results = append(results, fmt.Sprintf("✓ 路径扩展成功: %s -> %s", logPath, expandedPath))
+	results = append(results, fmt.Sprintf("✓ Path expansion successful: %s -> %s", logPath, expandedPath))
 
-	// 测试文件访问性
+	// Test file accessibility
 	err = checkLogFileAccess(expandedPath)
 	if err != nil {
-		return false, fmt.Sprintf("访问性检查失败: %v\n已完成的检查:\n%s", err, strings.Join(results, "\n"))
+		return false, fmt.Sprintf("Accessibility check failed: %v\nCompleted checks:\n%s", err, strings.Join(results, "\n"))
 	}
-	results = append(results, "✓ 文件访问性检查通过")
+	results = append(results, "✓ File accessibility check passed")
 
-	// 测试文件读取（读取前几行）
+	// Test file reading (read first few lines)
 	file, err := os.Open(expandedPath)
 	if err != nil {
-		return false, fmt.Sprintf("文件打开失败: %v\n已完成的检查:\n%s", err, strings.Join(results, "\n"))
+		return false, fmt.Sprintf("File open failed: %v\nCompleted checks:\n%s", err, strings.Join(results, "\n"))
 	}
 	defer file.Close()
 
@@ -1100,124 +1116,124 @@ func testLogFileAccess(logPath string) (bool, string) {
 		lineCount++
 	}
 	if err := scanner.Err(); err != nil {
-		return false, fmt.Sprintf("文件读取失败: %v\n已完成的检查:\n%s", err, strings.Join(results, "\n"))
+		return false, fmt.Sprintf("File read failed: %v\nCompleted checks:\n%s", err, strings.Join(results, "\n"))
 	}
-	results = append(results, fmt.Sprintf("✓ 文件读取测试通过，读取了 %d 行", lineCount))
+	results = append(results, fmt.Sprintf("✓ File read test passed, read %d lines", lineCount))
 
-	return true, fmt.Sprintf("所有测试通过:\n%s", strings.Join(results, "\n"))
+	return true, fmt.Sprintf("All tests passed:\n%s", strings.Join(results, "\n"))
 }
 
-// checkLogFileAccess 检查日志文件的存在性、权限和可读性
-// 提供详细的错误信息帮助诊断问题
-// 参数:
+// checkLogFileAccess Check log file existence, permissions and readability
+// Provides detailed error messages to help diagnose issues
+// Parameters:
 //
-//	logPath: 日志文件路径
+//	logPath: Log file path
 //
-// 返回:
+// Returns:
 //
-//	error: 如果检查失败则返回详细错误信息，成功则返回nil
+//	error: Returns detailed error message if check fails, nil on success
 func checkLogFileAccess(logPath string) error {
-	// 检查路径是否为空
+	// Check if path is empty
 	if logPath == "" {
-		return fmt.Errorf("日志文件路径为空")
+		return fmt.Errorf("Log file path is empty")
 	}
 
-	// 检查文件是否存在
+	// Check if file exists
 	fileInfo, err := os.Stat(logPath)
 	if os.IsNotExist(err) {
-		// 检查父目录是否存在
+		// Check if parent directory exists
 		dir := filepath.Dir(logPath)
 		if _, dirErr := os.Stat(dir); os.IsNotExist(dirErr) {
-			return fmt.Errorf("日志文件不存在且父目录不存在: %s (父目录: %s)", logPath, dir)
+			return fmt.Errorf("Log file does not exist and parent directory does not exist: %s (Parent directory: %s)", logPath, dir)
 		}
-		return fmt.Errorf("日志文件不存在: %s (请检查vsftpd配置中的xferlog_file设置)", logPath)
+		return fmt.Errorf("Log file does not exist: %s (Please check xferlog_file setting in vsftpd configuration)", logPath)
 	}
 	if err != nil {
-		return fmt.Errorf("无法访问日志文件: %s, 错误: %v", logPath, err)
+		return fmt.Errorf("Cannot access log file: %s, error: %v", logPath, err)
 	}
 
-	// 检查是否为常规文件
+	// Check if regular file
 	if !fileInfo.Mode().IsRegular() {
-		return fmt.Errorf("指定路径不是常规文件: %s (文件类型: %s)", logPath, fileInfo.Mode().String())
+		return fmt.Errorf("Specified path is not a regular file: %s (File type: %s)", logPath, fileInfo.Mode().String())
 	}
 
-	// 检查文件是否可读
+	// Check if file is readable
 	file, err := os.Open(logPath)
 	if err != nil {
 		if os.IsPermission(err) {
-			return fmt.Errorf("没有读取日志文件的权限: %s (当前用户可能需要读取权限)", logPath)
+			return fmt.Errorf("No permission to read log file: %s (Current user may need read permission)", logPath)
 		}
-		return fmt.Errorf("无法打开日志文件: %s, 错误: %v", logPath, err)
+		return fmt.Errorf("Cannot open log file: %s, error: %v", logPath, err)
 	}
 	file.Close()
 
-	// 检查文件大小（可选警告）
+	// Check file size (optional warning)
 	if fileInfo.Size() == 0 {
-		logger.Warn("日志文件为空: %s (这可能是正常的，如果vsftpd刚启动)", logPath)
+		logger.Warn("Log file is empty: %s (this may be normal if vsftpd just started)", logPath)
 	}
 
 	return nil
 }
 
-// readRemoteFile 通过SSH读取远程文件内容
-// 支持增量读取，只读取从指定位置开始的新内容
+// readRemoteFile reads remote file content via SSH
+// Supports incremental reading, only reads new content from specified position
 func readRemoteFile(config *Config, filePath string, startPosition int64) ([]string, int64, error) {
 	if !config.NeedSSH {
-		// 如果不需要SSH，直接读取本地文件
+		// If SSH not needed, read local file directly
 		return readLocalFile(filePath, startPosition)
 	}
 
-	// 添加SSH读取文件开始的INFO日志
-	logger.Info("通过SSH连接到 %s 读取文件: %s", config.TargetHost, filePath)
+	// Add INFO log for SSH file read start
+	logger.Info("Connecting via SSH to %s reading file: %s", config.TargetHost, filePath)
 
-	// 创建SSH连接
+	// Create SSH connection
 	sshClient, err := createSSHClient(config)
 	if err != nil {
-		return nil, 0, fmt.Errorf("创建SSH连接失败: %w", err)
+		return nil, 0, fmt.Errorf("Failed to create SSH connection: %w", err)
 	}
 	defer sshClient.Close()
 
-	// 使用tail命令从指定位置开始读取文件
+	// Use tail command to read file from specified position
 	var command string
 	if startPosition > 0 {
-		// 使用dd命令跳过已读取的字节
+		// Use dd command to skip already read bytes
 		command = fmt.Sprintf("dd if=%s bs=1 skip=%d 2>/dev/null", filePath, startPosition)
 	} else {
-		// 读取整个文件
+		// Read entire file
 		command = fmt.Sprintf("cat %s", filePath)
 	}
 
 	output, err := executeSSHCommand(sshClient, command)
 	if err != nil {
-		return nil, 0, fmt.Errorf("执行SSH命令失败: %w", err)
+		return nil, 0, fmt.Errorf("Failed to execute SSH command: %w", err)
 	}
 
 	lines := strings.Split(output, "\n")
-	// 移除最后一个空行
+	// Remove last empty line
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
 
-	// 计算新的位置
+	// Calculate new position
 	newPosition := startPosition + int64(len(output))
 
-	// 添加SSH读取文件成功的INFO日志
-	logger.Info("SSH读取文件成功，读取 %d 行，新位置: %d", len(lines), newPosition)
+	// Add INFO log for successful SSH file read
+	logger.Info("SSH file read successful, read %d lines, new position: %d", len(lines), newPosition)
 
 	return lines, newPosition, nil
 }
 
-// readLocalFile 读取本地文件内容（用于不需要SSH的情况）
+// readLocalFile Read local file content (for cases not requiring SSH)
 func readLocalFile(filePath string, startPosition int64) ([]string, int64, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("打开本地文件失败: %w", err)
+		return nil, 0, fmt.Errorf("Failed to open local file: %w", err)
 	}
 	defer file.Close()
 
-	// 跳到指定位置
+	// Seek to specified position
 	if _, err := file.Seek(startPosition, 0); err != nil {
-		return nil, 0, fmt.Errorf("定位文件位置失败: %w", err)
+		return nil, 0, fmt.Errorf("Failed to seek file position: %w", err)
 	}
 
 	var lines []string
@@ -1227,82 +1243,82 @@ func readLocalFile(filePath string, startPosition int64) ([]string, int64, error
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, 0, fmt.Errorf("读取文件失败: %w", err)
+		return nil, 0, fmt.Errorf("Failed to read file: %w", err)
 	}
 
-	// 获取当前文件位置
+	// Get current file position
 	currentPos, err := file.Seek(0, io.SeekCurrent)
 	if err != nil {
-		return nil, 0, fmt.Errorf("获取文件位置失败: %w", err)
+		return nil, 0, fmt.Errorf("Failed to get file position: %w", err)
 	}
 
 	return lines, currentPos, nil
 }
 
-// parseStandardXferlog 解析标准xferlog格式
-// 标准格式：Wed Oct 15 16:04:42 2025 1 172.25.235.63 19236361 /txt/yd_platform.txt b _ o g dstore ftp 0 * c
-// 字段说明：时间戳 传输时间(秒) 客户端IP 文件大小(字节) 文件路径 传输类型 特殊动作标志 方向 访问模式 用户名 服务名 认证方法 认证用户ID 完成状态
+// parseStandardXferlog Parse standard xferlog format
+// Standard format:Wed Oct 15 16:04:42 2025 1 172.25.235.63 19236361 /txt/yd_platform.txt b _ o g dstore ftp 0 * c
+// Field description: timestamp transfer_time(seconds) client_ip file_size(bytes) file_path transfer_type special_action_flag direction access_mode username service_name auth_method auth_user_id completion_status
 func parseStandardXferlog(line string) (direction string, clientIP string, fileSize int64, filePath string, transferTime int, username string, completed bool) {
 	fields := strings.Fields(line)
 	if len(fields) < 18 {
 		return "", "", 0, "", 0, "", false
 	}
 
-	// 解析各字段 (基于标准xferlog格式)
-	// 格式: Wed Oct 15 16:04:42 2025 1 172.25.235.63 19236361 /txt/yd_platform.txt b _ o g dstore ftp 0 * c
-	transferTimeStr := fields[5]   // 传输时间（秒）
-	clientIP = fields[6]           // 客户端IP
-	fileSizeStr := fields[7]       // 文件大小（字节）
-	filePath = fields[8]           // 文件路径
-	direction = fields[11]         // 方向：o（出站/下载）或i（入站/上传）
-	username = fields[13]          // 用户名
-	completionStatus := fields[17] // 完成状态：c（完成）或i（未完成）
+	// Parse fields (based on standard xferlog format)
+	// Format: Wed Oct 15 16:04:42 2025 1 172.25.235.63 19236361 /txt/yd_platform.txt b _ o g dstore ftp 0 * c
+	transferTimeStr := fields[5]   // Transfer time (seconds)
+	clientIP = fields[6]           // client_ip
+	fileSizeStr := fields[7]       // File size (bytes)
+	filePath = fields[8]           // file_path
+	direction = fields[11]         // direction: o (outbound/download) or i (inbound/upload)
+	username = fields[13]          // username
+	completionStatus := fields[17] // completion_status: c (complete) or i (incomplete)
 
-	// 解析传输时间
+	// Parse transfer time
 	if t, err := strconv.Atoi(transferTimeStr); err == nil {
 		transferTime = t
 	}
 
-	// 解析文件大小
+	// Parse file size
 	if size, err := strconv.ParseInt(fileSizeStr, 10, 64); err == nil {
 		fileSize = size
 	}
 
-	// 检查是否完成
+	// Check if completed
 	completed = (completionStatus == "c")
 
 	return direction, clientIP, fileSize, filePath, transferTime, username, completed
 }
 
-// parseFTPLog 解析FTP日志文件并更新相关指标
-// 支持标准xferlog格式和SSH远程读取
-// 采用增量读取方式，只处理自上次读取以来新增的日志内容
-// 参数:
+// parseFTPLog Parse FTP log file and update related metrics
+// Supports standard xferlog format and SSH remote reading
+// Uses incremental reading, only processes new log content since last read
+// Parameters:
 //
-//	config: 配置对象，包含SSH连接信息
-//	logPath: FTP日志文件的完整路径
-//	state: 导出器状态对象，用于维护读取位置
+//	config: Configuration object containing SSH connection info
+//	logPath: Full FTP log file path
+//	state: Exporter state object for maintaining read positions
 //
-// 返回:
+// Returns:
 //
-//	error: 如果文件操作或解析失败则返回错误，成功则返回nil
+//	error: Returns error if file operation or parsing fails, nil on success
 func parseFTPLog(config *Config, logPath string, state *ExporterState) error {
-	// 添加开始解析的INFO日志
-	logger.Info("开始解析FTP日志文件: %s，从位置 %d 开始", logPath, state.lastPosition)
+	// Add INFO log for starting parsing
+	logger.Info("Starting to parse FTP log file: %s, starting from position %d", logPath, state.lastPosition)
 
-	// 读取日志文件内容
+	// Read log file content
 	lines, newPosition, err := readRemoteFile(config, logPath, state.lastPosition)
 	if err != nil {
-		return fmt.Errorf("读取日志文件失败: %w", err)
+		return fmt.Errorf("Failed to read log file: %w", err)
 	}
 
 	linesProcessed := 0
 	loginCount := 0
 	uploadCount := 0
 	downloadCount := 0
-	const maxLinesPerRead = 1000 // 限制每次处理的行数
+	const maxLinesPerRead = 1000 // Limit number of lines processed per iteration
 
-	// 用于计算带宽的临时变量
+	// Temporary variables for bandwidth calculation
 	currentTime := time.Now()
 	totalBytesThisRound := int64(0)
 
@@ -1318,27 +1334,27 @@ func parseFTPLog(config *Config, logPath string, state *ExporterState) error {
 
 		linesProcessed++
 
-		// 尝试解析标准xferlog格式
+		// Try parsing standard xferlog format
 		direction, clientIP, fileSize, filePath, transferTime, username, completed := parseStandardXferlog(line)
 
 		if direction != "" && completed {
-			// 更新客户端连接统计
+			// Update client connection statistics
 			if clientIP != "" {
 				clientConnectionsTotal.WithLabelValues(clientIP).Inc()
 			}
 
-			// 更新用户统计
+			// Update user statistics
 			if username != "" {
 				userConnectionsTotal.WithLabelValues(username).Inc()
 			}
 
-			// 根据方向统计上传/下载
-			if direction == "i" { // 入站 = 上传到服务器
+			// Count uploads/downloads by direction
+			if direction == "i" { // Inbound = Upload to server
 				uploadCount++
 				ftpUploadTotal.Inc()
-				filesUploaded.Inc() // 更新Gauge指标
+				filesUploaded.Inc() // Update Gauge metric
 
-				// 统计按客户端IP的上传文件数量
+				// Count uploaded files by client_ip
 				if clientIP != "" {
 					clientFilesTotal.WithLabelValues(clientIP, "upload").Inc()
 				}
@@ -1349,22 +1365,22 @@ func parseFTPLog(config *Config, logPath string, state *ExporterState) error {
 					totalBytesThisRound += fileSize
 				}
 
-				// 记录传输时间
+				// Record transfer time
 				if transferTime > 0 {
 					transferDurationSeconds.Observe(float64(transferTime))
 				}
 
-				// 统计文件扩展名
+				// Count file extension
 				if ext := extractFileExtension(filePath); ext != "" {
 					fileCountByExtension.WithLabelValues(ext).Inc()
 				}
 
-			} else if direction == "o" { // 出站 = 从服务器下载
+			} else if direction == "o" { // Outbound = Download from server
 				downloadCount++
 				ftpDownloadTotal.Inc()
-				filesDownloaded.Inc() // 更新Gauge指标
+				filesDownloaded.Inc() // Update Gauge metric
 
-				// 统计按客户端IP的下载文件数量
+				// Count downloaded files by client_ip
 				if clientIP != "" {
 					clientFilesTotal.WithLabelValues(clientIP, "download").Inc()
 				}
@@ -1375,34 +1391,34 @@ func parseFTPLog(config *Config, logPath string, state *ExporterState) error {
 					totalBytesThisRound += fileSize
 				}
 
-				// 记录传输时间
+				// Record transfer time
 				if transferTime > 0 {
 					transferDurationSeconds.Observe(float64(transferTime))
 				}
 
-				// 统计文件扩展名
+				// Count file extension
 				if ext := extractFileExtension(filePath); ext != "" {
 					fileCountByExtension.WithLabelValues(ext).Inc()
 				}
 			}
 		}
 
-		// 兼容旧格式的解析（保留向后兼容性）
-		// 解析登录成功的日志
+		// Parse old format for backward compatibility
+		// Parse successful login log
 		if strings.Contains(line, "OK LOGIN") {
 			loginCount++
-			// 尝试解析时间戳
+			// Try parsing timestamp
 			if timestamp := extractTimestamp(line); timestamp > 0 {
 				ftpLoginTime.Set(float64(timestamp))
 			} else {
-				// 如果无法解析时间戳，使用当前时间
-				// 这样可以避免显示"56年前"这样的错误时间
+				// If unable to parse timestamp, use current time
+				// This avoids displaying incorrect times like "56 years ago"
 				ftpLoginTime.Set(float64(time.Now().Unix()))
 			}
 			ftpLoginTotal.Inc()
 		}
 
-		// 解析登录失败的日志
+		// Parse failed login log
 		if strings.Contains(line, "FAIL LOGIN") || strings.Contains(line, "530") {
 			failedLoginsTotal.Inc()
 			if strings.Contains(line, "530") {
@@ -1410,7 +1426,7 @@ func parseFTPLog(config *Config, logPath string, state *ExporterState) error {
 			}
 		}
 
-		// 解析传输错误
+		// Parse transfer errors
 		if strings.Contains(line, "FAIL UPLOAD") {
 			transferErrorsTotal.WithLabelValues("upload").Inc()
 		} else if strings.Contains(line, "FAIL DOWNLOAD") {
@@ -1420,30 +1436,30 @@ func parseFTPLog(config *Config, logPath string, state *ExporterState) error {
 			connectionTimeoutsTotal.Inc()
 		}
 
-		// 解析最大连接数限制
+		// Parse max connections limit
 		if strings.Contains(line, "max connections") || strings.Contains(line, "connection limit") {
 			maxConnectionsReachedTotal.Inc()
 		}
 	}
 
-	// 更新读取位置
+	// Update read position
 	state.lastPosition = newPosition
 
-	// 更新并发传输数
+	// Update concurrent transfers count
 	concurrentTransfers.Set(float64(state.activeTransfers))
 
-	// 计算和更新带宽使用率
+	// Calculate and update bandwidth usage
 	if !state.lastBandwidthCheck.IsZero() {
 		timeDiff := currentTime.Sub(state.lastBandwidthCheck).Seconds()
 		if timeDiff > 0 {
-			// 计算当前轮次的带宽使用率
+			// Calculate bandwidth rate for current round
 			currentBandwidthRate := float64(totalBytesThisRound) / timeDiff
 			bandwidthUsage.Set(currentBandwidthRate)
 
-			// 计算累计平均传输速度
+			// Calculate cumulative average transfer speed
 			totalBytes := state.totalBytesUploaded + state.totalBytesDownloaded
 			if totalBytes > 0 {
-				// 使用程序运行时间计算平均速度
+				// Calculate average speed using program runtime
 				programRunTime := currentTime.Sub(state.lastProcessedTime).Seconds()
 				if programRunTime > 0 {
 					averageSpeed := float64(totalBytes) / programRunTime
@@ -1452,32 +1468,32 @@ func parseFTPLog(config *Config, logPath string, state *ExporterState) error {
 			}
 		}
 	} else {
-		// 首次运行时初始化
+		// Initialize on first run
 		state.lastBandwidthCheck = currentTime
 	}
 
-	// 更新检查时间和累计字节数
+	// Update check time and cumulative bytes
 	state.lastBandwidthCheck = currentTime
 	state.lastBytesTransferred += totalBytesThisRound
 
-	// 添加完成解析的INFO日志
-	logger.Info("FTP日志解析完成，处理 %d 行，上传: %d，下载: %d", linesProcessed, uploadCount, downloadCount)
+	// Add INFO log for parsing completion
+	logger.Info("FTP log parsing complete, processed %d lines, uploads: %d, downloads: %d", linesProcessed, uploadCount, downloadCount)
 
 	return nil
 }
 
-// parseVsftpdLog 解析vsftpd.log文件，提取连接和登录事件信息
-// 支持解析CONNECT和OK LOGIN事件，更新相关的监控指标
-// 支持SSH远程读取
+// parseVsftpdLog Parse vsftpd.log file, extract connection and login event information
+// Supports parsing CONNECT and OK LOGIN events, updates related monitoring metrics
+// Supports SSH remote reading
 func parseVsftpdLog(config *Config, logPath string, state *ExporterState) error {
 	if logPath == "" {
-		return nil // 如果没有配置vsftpd.log路径，直接返回
+		return nil // If vsftpd.log path not configured, return directly
 	}
 
-	// 添加开始解析的INFO日志
-	logger.Info("开始解析vsftpd日志文件: %s", logPath)
+	// Add INFO log for starting parsing
+	logger.Info("Starting to parse vsftpd log file: %s", logPath)
 
-	// 初始化状态映射（如果尚未初始化）
+	// Initialize state maps (if not already initialized)
 	if state.clientLastActivity == nil {
 		state.clientLastActivity = make(map[string]time.Time)
 	}
@@ -1494,13 +1510,13 @@ func parseVsftpdLog(config *Config, logPath string, state *ExporterState) error 
 		state.clientLastConnect = make(map[string]time.Time)
 	}
 
-	// 读取vsftpd日志文件内容
+	// Read vsftpd log file content
 	lines, newPosition, err := readRemoteFile(config, logPath, state.vsftpLogPosition)
 	if err != nil {
-		return fmt.Errorf("读取vsftpd日志文件失败: %w", err)
+		return fmt.Errorf("Failed to read vsftpd log file: %w", err)
 	}
 
-	// 更新读取位置
+	// Update read position
 	state.vsftpLogPosition = newPosition
 
 	linesProcessed := 0
@@ -1508,9 +1524,9 @@ func parseVsftpdLog(config *Config, logPath string, state *ExporterState) error 
 	loginCount := 0
 	currentTime := time.Now()
 
-	// 使用预编译的全局正则表达式解析vsftpd.log格式
-	// 示例: Wed Oct 15 15:34:29 2025 [pid 2] CONNECT: Client "172.25.235.63"
-	// 示例: Wed Oct 15 15:34:29 2025 [pid 1] [ostore] OK LOGIN: Client "172.25.235.63"
+	// Use pre-compiled global regex to parse vsftpd.log format
+	// Example: Wed Oct 15 15:34:29 2025 [pid 2] CONNECT: Client "172.25.235.63"
+	// Example: Wed Oct 15 15:34:29 2025 [pid 1] [ostore] OK LOGIN: Client "172.25.235.63"
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -1520,29 +1536,29 @@ func parseVsftpdLog(config *Config, logPath string, state *ExporterState) error 
 
 		linesProcessed++
 
-		// 解析CONNECT事件
+		// Parse CONNECT event
 		if matches := connectRegex.FindStringSubmatch(line); matches != nil {
 			timeStr := matches[1]
 			processID := matches[2]
 			clientIP := matches[3]
 
-			// 解析时间戳
+			// Parse timestamp
 			eventTime, err := parseVsftpdTimestamp(timeStr)
 			if err != nil {
-				logger.Warn("解析时间戳失败: %s, 错误: %v", timeStr, err)
+				logger.Warn("Failed to parse timestamp: %s, error: %v", timeStr, err)
 				continue
 			}
 
-			// 更新指标
+			// Update metrics
 			clientConnectionsTotal.WithLabelValues(clientIP).Inc()
 			connectCount++
 
-			// 更新状态跟踪
+			// Update state tracking
 			state.clientLastActivity[clientIP] = eventTime
 			state.clientConnectTimes[clientIP] = eventTime
 			state.activeProcessIDs[processID] = eventTime
 
-			// 检测快速重连（30秒内同一IP重连）
+			// Detect rapid reconnections (same IP reconnects within 30 seconds)
 			if lastConnect, exists := state.clientLastConnect[clientIP]; exists {
 				if eventTime.Sub(lastConnect).Seconds() <= 30 {
 					rapidReconnectionsTotal.Inc()
@@ -1550,50 +1566,50 @@ func parseVsftpdLog(config *Config, logPath string, state *ExporterState) error 
 			}
 			state.clientLastConnect[clientIP] = eventTime
 
-			// 按小时统计客户端活动
+			// Count client activity by hour
 			hour := fmt.Sprintf("%02d", eventTime.Hour())
 			clientActivityByHour.WithLabelValues(hour).Inc()
 		}
 
-		// 解析OK LOGIN事件
+		// Parse OK LOGIN event
 		if matches := loginRegex.FindStringSubmatch(line); matches != nil {
 			timeStr := matches[1]
 			processID := matches[2]
 			username := matches[3]
 			clientIP := matches[4]
 
-			// 解析时间戳
+			// Parse timestamp
 			eventTime, err := parseVsftpdTimestamp(timeStr)
 			if err != nil {
-				logger.Warn("解析时间戳失败: %s, 错误: %v", timeStr, err)
+				logger.Warn("Failed to parse timestamp: %s, error: %v", timeStr, err)
 				continue
 			}
 
-			// 更新指标
+			// Update metrics
 			userLoginsTotal.WithLabelValues(username).Inc()
 			userConnectionsTotal.WithLabelValues(username).Inc()
-			ftpLoginTotal.Inc() // 修复：添加总登录次数计数
+			ftpLoginTotal.Inc() // Fix: add total login count
 			loginCount++
 
-			// 更新最后登录时间指标
+			// Update last login time metric
 			ftpLoginTime.Set(float64(eventTime.Unix()))
 
-			// 更新状态跟踪
+			// Update state tracking
 			state.clientLastActivity[clientIP] = eventTime
 			state.userClientMapping[username] = clientIP
 			state.activeProcessIDs[processID] = eventTime
 
-			// 计算连接到登录的延迟
+			// Calculate connection to login delay
 			if connectTime, exists := state.clientConnectTimes[clientIP]; exists {
 				delay := eventTime.Sub(connectTime).Seconds()
-				if delay >= 0 && delay <= 60 { // 合理的延迟范围（0-60秒）
+				if delay >= 0 && delay <= 60 { // Reasonable delay range (0-60 seconds)
 					connectionLoginDelaySeconds.Observe(delay)
 				}
 			}
 		}
 	}
 
-	// 定期更新Gauge类型指标（每分钟更新一次）
+	// Periodically update Gauge metrics (every minute)
 	if currentTime.Sub(state.lastUniqueClientUpdate).Minutes() >= 1 {
 		updateUniqueClientsMetric(state, currentTime)
 		state.lastUniqueClientUpdate = currentTime
@@ -1604,43 +1620,43 @@ func parseVsftpdLog(config *Config, logPath string, state *ExporterState) error 
 		state.lastProcessUpdate = currentTime
 	}
 
-	// 添加完成解析的INFO日志
-	logger.Info("vsftpd日志解析完成，处理 %d 行，连接: %d，登录: %d", linesProcessed, connectCount, loginCount)
+	// Add INFO log for parsing completion
+	logger.Info("vsftpd log parsing complete, processed %d lines, connections: %d, logins: %d", linesProcessed, connectCount, loginCount)
 
 	return nil
 }
 
-// parseVsftpdTimestamp 解析vsftpd.log中的时间戳格式
-// 格式: Wed Oct 15 15:34:29 2025
+// parseVsftpdTimestamp Parse timestamp format in vsftpd.log
+// Format: Wed Oct 15 15:34:29 2025
 func parseVsftpdTimestamp(timeStr string) (time.Time, error) {
-	// vsftpd使用的时间格式，支持单数字日期（带前导空格）
+	// vsftpd time format, supports single-digit dates (with leading space)
 	layouts := []string{
-		"Mon Jan _2 15:04:05 2006", // 支持单数字日期，如 "Thu Oct  6 10:58:33 2025"
-		"Mon Jan 02 15:04:05 2006", // 支持双数字日期，如 "Thu Oct 16 10:58:33 2025"
-		"Mon Jan 2 15:04:05 2006",  // 标准格式
+		"Mon Jan _2 15:04:05 2006", // Supports single-digit dates, e.g. "Thu Oct  6 10:58:33 2025"
+		"Mon Jan 02 15:04:05 2006", // Supports double-digit dates, e.g. "Thu Oct 16 10:58:33 2025"
+		"Mon Jan 2 15:04:05 2006",  // Standard format
 	}
 
-	// 使用本地时区解析时间，而不是UTC
+	// Parse time using local timezone instead of UTC
 	for _, layout := range layouts {
 		if t, err := time.ParseInLocation(layout, timeStr, time.Local); err == nil {
 			return t, nil
 		}
 	}
 
-	return time.Time{}, fmt.Errorf("无法解析时间戳: %s", timeStr)
+	return time.Time{}, fmt.Errorf("Unable to parse timestamp: %s", timeStr)
 }
 
-// updateUniqueClientsMetric 更新唯一客户端数量指标
-// 统计最近5分钟内有活动的不同客户端IP数量
+// updateUniqueClientsMetric Update unique clients count metric
+// Count different client_ip addresses with activity in last 5 minutes
 func updateUniqueClientsMetric(state *ExporterState, currentTime time.Time) {
 	activeClients := 0
-	cutoffTime := currentTime.Add(-5 * time.Minute) // 5分钟内的活动
+	cutoffTime := currentTime.Add(-5 * time.Minute) // Activity in last 5 minutes
 
 	for clientIP, lastActivity := range state.clientLastActivity {
 		if lastActivity.After(cutoffTime) {
 			activeClients++
 		} else {
-			// 清理过期的客户端记录
+			// Clean up expired client records
 			delete(state.clientLastActivity, clientIP)
 			delete(state.clientConnectTimes, clientIP)
 		}
@@ -1649,17 +1665,17 @@ func updateUniqueClientsMetric(state *ExporterState, currentTime time.Time) {
 	uniqueClients.Set(float64(activeClients))
 }
 
-// updateActiveProcessesMetric 更新活跃进程数量指标
-// 统计最近5分钟内有活动的不同进程ID数量
+// updateActiveProcessesMetric Update active processes count metric
+// Count different process IDs with activity in last 5 minutes
 func updateActiveProcessesMetric(state *ExporterState, currentTime time.Time) {
 	activeProcessCount := 0
-	cutoffTime := currentTime.Add(-5 * time.Minute) // 5分钟内的活动
+	cutoffTime := currentTime.Add(-5 * time.Minute) // Activity in last 5 minutes
 
 	for processID, lastActivity := range state.activeProcessIDs {
 		if lastActivity.After(cutoffTime) {
 			activeProcessCount++
 		} else {
-			// 清理过期的进程记录
+			// Clean up expired process records
 			delete(state.activeProcessIDs, processID)
 		}
 	}

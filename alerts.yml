@@ -2,7 +2,7 @@ groups:
   - name: vsftp_alerts
     interval: 30s
     rules:
-      # FTP 服务不可用告警
+      # FTP service unavailable alert
       - alert: VsftpdServiceDown
         expr: vsftp_login_success == 0
         for: 2m
@@ -10,10 +10,10 @@ groups:
           severity: critical
           service: vsftpd
         annotations:
-          summary: "Vsftpd 服务不可用"
-          description: "实例 {{ $labels.instance }} 的 Vsftpd 服务已经宕机超过 2 分钟"
+          summary: "Vsftpd service unavailable"
+          description: "Vsftpd service on instance {{ $labels.instance }} has been down for more than 2 minutes"
 
-      # 登录失败率过高告警
+      # High login failure rate alert
       - alert: HighFailedLoginRate
         expr: rate(vsftp_failed_logins_total[5m]) > 10
         for: 5m
@@ -21,10 +21,10 @@ groups:
           severity: warning
           service: vsftpd
         annotations:
-          summary: "FTP 登录失败率过高"
-          description: "实例 {{ $labels.instance }} 在过去 5 分钟内登录失败率超过 10 次/分钟"
+          summary: "FTP login failure rate is too high"
+          description: "Login failure rate on instance {{ $labels.instance }} exceeded 10 times/minute in the past 5 minutes"
 
-      # 传输错误率过高告警
+      # High transfer error rate alert
       - alert: HighTransferErrorRate
         expr: rate(vsftp_transfer_errors_total[5m]) > 5
         for: 5m
@@ -32,10 +32,10 @@ groups:
           severity: warning
           service: vsftpd
         annotations:
-          summary: "FTP 传输错误率过高"
-          description: "实例 {{ $labels.instance }} 在过去 5 分钟内传输错误率超过 5 次/分钟，错误类型: {{ $labels.type }}"
+          summary: "FTP transfer error rate is too high"
+          description: "Transfer error rate on instance {{ $labels.instance }} exceeded 5 times/minute in the past 5 minutes, error type: {{ $labels.type }}"
 
-      # 连接数过高告警
+      # High connection count alert
       - alert: HighConnectionCount
         expr: vsftp_connections > 100
         for: 5m
@@ -43,10 +43,10 @@ groups:
           severity: warning
           service: vsftpd
         annotations:
-          summary: "FTP 连接数过高"
-          description: "实例 {{ $labels.instance }} 的连接数为 {{ $value }}，超过阈值 100"
+          summary: "FTP connection count is too high"
+          description: "Connection count on instance {{ $labels.instance }} is {{ $value }}, exceeding threshold 100"
 
-      # CLOSE_WAIT 连接过多告警（可能存在连接泄漏）
+      # Too many CLOSE_WAIT connections alert (possible connection leak)
       - alert: HighCloseWaitConnections
         expr: vsftp_close_wait_connections > 20
         for: 10m
@@ -54,10 +54,10 @@ groups:
           severity: warning
           service: vsftpd
         annotations:
-          summary: "CLOSE_WAIT 连接数过多"
-          description: "实例 {{ $labels.instance }} 的 CLOSE_WAIT 连接数为 {{ $value }}，可能存在连接泄漏"
+          summary: "Too many CLOSE_WAIT connections"
+          description: "CLOSE_WAIT connection count on instance {{ $labels.instance }} is {{ $value }}, possible connection leak"
 
-      # 连接超时频繁告警
+      # Frequent connection timeout alert
       - alert: FrequentConnectionTimeouts
         expr: rate(vsftp_connection_timeouts_total[5m]) > 3
         for: 5m
@@ -65,10 +65,10 @@ groups:
           severity: warning
           service: vsftpd
         annotations:
-          summary: "连接超时频繁"
-          description: "实例 {{ $labels.instance }} 在过去 5 分钟内连接超时率超过 3 次/分钟"
+          summary: "Frequent connection timeouts"
+          description: "Connection timeout rate on instance {{ $labels.instance }} exceeded 3 times/minute in the past 5 minutes"
 
-      # 认证错误频繁告警
+      # Frequent authentication errors alert
       - alert: FrequentAuthenticationErrors
         expr: rate(vsftp_authentication_errors_total[5m]) > 5
         for: 5m
@@ -76,21 +76,21 @@ groups:
           severity: warning
           service: vsftpd
         annotations:
-          summary: "认证错误频繁"
-          description: "实例 {{ $labels.instance }} 在过去 5 分钟内认证错误率超过 5 次/分钟，可能存在暴力破解攻击"
+          summary: "Frequent authentication errors"
+          description: "Authentication error rate on instance {{ $labels.instance }} exceeded 5 times/minute in the past 5 minutes, possible brute force attack"
 
-      # 快速重连异常告警
+      # Rapid reconnection anomaly alert
       - alert: RapidReconnections
         expr: rate(vsftp_rapid_reconnections_total[5m]) > 10
         for: 5m
         labels:
-          severity: info
+          severity: warning
           service: vsftpd
         annotations:
-          summary: "快速重连异常"
-          description: "实例 {{ $labels.instance }} 在过去 5 分钟内快速重连率超过 10 次/分钟"
+          summary: "Rapid reconnection anomaly detected"
+          description: "Rapid reconnection rate on instance {{ $labels.instance }} exceeded 10 times/minute in the past 5 minutes - possible security threat or misconfigured client"
 
-      # 带宽使用率过高告警
+      # High bandwidth usage alert
       - alert: HighBandwidthUsage
         expr: vsftp_bandwidth_usage_bytes_per_second > 100000000  # 100 MB/s
         for: 5m
@@ -98,10 +98,43 @@ groups:
           severity: info
           service: vsftpd
         annotations:
-          summary: "带宽使用率过高"
-          description: "实例 {{ $labels.instance }} 的带宽使用率为 {{ $value | humanize }}B/s，超过 100 MB/s"
+          summary: "High bandwidth usage"
+          description: "Bandwidth usage on instance {{ $labels.instance }} is {{ $value | humanize }}B/s, exceeding 100 MB/s"
 
-      # 达到最大连接数限制告警
+      # Low transfer speed alert
+      - alert: LowAverageTransferSpeed
+        expr: vsftp_average_transfer_speed_bytes_per_second < 1048576 and vsftp_average_transfer_speed_bytes_per_second > 0  # < 1 MB/s
+        for: 10m
+        labels:
+          severity: info
+          service: vsftpd
+        annotations:
+          summary: "Low average transfer speed"
+          description: "Average transfer speed on instance {{ $labels.instance }} is {{ $value | humanize }}B/s (< 1 MB/s) for the past 10 minutes - possible network issue"
+
+      # High number of concurrent transfers
+      - alert: HighConcurrentTransfers
+        expr: vsftp_concurrent_transfers > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: vsftpd
+        annotations:
+          summary: "High concurrent transfers"
+          description: "Concurrent transfers on instance {{ $labels.instance }} is {{ $value }}, exceeding threshold of 50 - server may be under heavy load"
+
+      # Anomalous client activity
+      - alert: UnusualClientActivity
+        expr: count(rate(vsftp_client_connections_total[5m]) > 0) > 20
+        for: 10m
+        labels:
+          severity: info
+          service: vsftpd
+        annotations:
+          summary: "Unusual number of active clients"
+          description: "Instance {{ $labels.instance }} has more than 20 unique active clients in the past 10 minutes"
+
+      # Max connections limit reached alert
       - alert: MaxConnectionsReached
         expr: rate(vsftp_max_connections_reached_total[5m]) > 0
         for: 2m
@@ -109,10 +142,10 @@ groups:
           severity: warning
           service: vsftpd
         annotations:
-          summary: "达到最大连接数限制"
-          description: "实例 {{ $labels.instance }} 在过去 5 分钟内多次达到最大连接数限制"
+          summary: "Max connections limit reached"
+          description: "Instance {{ $labels.instance }} reached max connections limit multiple times in the past 5 minutes"
 
-      # Exporter 自身不可用告警
+      # Exporter unavailable alert
       - alert: VsftpExporterDown
         expr: up{job="vsftp-exporter"} == 0
         for: 2m
@@ -120,5 +153,5 @@ groups:
           severity: critical
           service: vsftpd-exporter
         annotations:
-          summary: "Vsftpd Exporter 不可用"
-          description: "实例 {{ $labels.instance }} 的 Vsftpd Exporter 已经宕机超过 2 分钟"
+          summary: "Vsftpd Exporter unavailable"
+          description: "Vsftpd Exporter on instance {{ $labels.instance }} has been down for more than 2 minutes"

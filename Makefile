@@ -1,6 +1,6 @@
 .PHONY: build run test clean fmt vet install help
 
-# 变量定义
+# Variable definitions
 BINARY_NAME=vsftp-exporter
 GO=go
 GOFLAGS=-v
@@ -8,87 +8,87 @@ VERSION?=1.0.0
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS=-ldflags "-X main.appVersion=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
 
-# 默认目标
+# Default target
 all: fmt vet build
 
-# 构建二进制文件
+# Build binary file
 build:
-	@echo "正在构建 $(BINARY_NAME)..."
+	@echo "Building $(BINARY_NAME)..."
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_NAME) vsftp-exporter.go
-	@echo "构建完成: $(BINARY_NAME)"
+	@echo "Build complete: $(BINARY_NAME)"
 
-# 运行程序
+# Run program
 run: build
-	@echo "启动 $(BINARY_NAME)..."
+	@echo "Starting $(BINARY_NAME)..."
 	./$(BINARY_NAME) -config=./config.json
 
-# 运行测试
+# Run tests
 test:
-	@echo "运行测试..."
+	@echo "Running tests..."
 	$(GO) test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-	@echo "测试完成"
+	@echo "Tests complete"
 
-# 查看测试覆盖率
+# View test coverage
 coverage: test
-	@echo "生成覆盖率报告..."
+	@echo "Generating coverage report..."
 	$(GO) tool cover -html=coverage.txt -o coverage.html
-	@echo "覆盖率报告已生成: coverage.html"
+	@echo "Coverage report generated: coverage.html"
 
-# 格式化代码
+# Format code
 fmt:
-	@echo "格式化代码..."
+	@echo "Formatting code..."
 	$(GO) fmt ./...
 
-# 代码检查
+# Code check
 vet:
-	@echo "运行代码检查..."
+	@echo "Running code checks..."
 	$(GO) vet ./...
 
-# 整理依赖
+# Tidy dependencies
 tidy:
-	@echo "整理依赖..."
+	@echo "Tidying dependencies..."
 	$(GO) mod tidy
 
-# 安装到系统
+# Install to system
 install: build
-	@echo "安装 $(BINARY_NAME) 到 /usr/local/bin/..."
+	@echo "Installing $(BINARY_NAME) to /usr/local/bin/..."
 	sudo cp $(BINARY_NAME) /usr/local/bin/
-	@echo "安装完成"
+	@echo "Installation complete"
 
-# 清理构建文件
+# Clean build files
 clean:
-	@echo "清理构建文件..."
+	@echo "Cleaning build files..."
 	rm -f $(BINARY_NAME)
 	rm -f coverage.txt coverage.html
-	@echo "清理完成"
+	@echo "Cleanup complete"
 
-# 交叉编译
+# Cross-compilation
 build-linux:
-	@echo "构建 Linux 版本..."
+	@echo "Building Linux version..."
 	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BINARY_NAME)-linux-amd64 vsftp-exporter.go
 
 build-windows:
-	@echo "构建 Windows 版本..."
+	@echo "Building Windows version..."
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BINARY_NAME)-windows-amd64.exe vsftp-exporter.go
 
 build-darwin:
-	@echo "构建 macOS 版本..."
+	@echo "Building macOS version..."
 	GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BINARY_NAME)-darwin-amd64 vsftp-exporter.go
 
 build-all: build-linux build-windows build-darwin
-	@echo "所有平台构建完成"
+	@echo "All platform builds complete"
 
-# 帮助信息
+# Help information
 help:
-	@echo "可用的 make 目标:"
-	@echo "  make build        - 构建二进制文件"
-	@echo "  make run          - 构建并运行程序"
-	@echo "  make test         - 运行测试"
-	@echo "  make coverage     - 生成测试覆盖率报告"
-	@echo "  make fmt          - 格式化代码"
-	@echo "  make vet          - 运行代码检查"
-	@echo "  make tidy         - 整理依赖"
-	@echo "  make install      - 安装到系统"
-	@echo "  make clean        - 清理构建文件"
-	@echo "  make build-all    - 交叉编译所有平台"
-	@echo "  make help         - 显示此帮助信息"
+	@echo "Available make targets:"
+	@echo "  make build        - Build binary file"
+	@echo "  make run          - Build and run program"
+	@echo "  make test         - Run tests"
+	@echo "  make coverage     - Generate test coverage report"
+	@echo "  make fmt          - Format code"
+	@echo "  make vet          - Run code checks"
+	@echo "  make tidy         - Tidy dependencies"
+	@echo "  make install      - Install to system"
+	@echo "  make clean        - Clean build files"
+	@echo "  make build-all    - Cross-compile for all platforms"
+	@echo "  make help         - Show this help information"

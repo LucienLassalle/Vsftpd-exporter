@@ -10,9 +10,9 @@ services:
     ports:
       - "9101:9101"
     volumes:
-      # 挂载配置文件
+      # Mount configuration file
       - ./config.json:/app/config.json:ro
-      # 如果需要访问本地日志文件，取消注释以下行
+      # If you need to access local log files, uncomment the following lines
       # - /var/log/xferlog:/var/log/xferlog:ro
       # - /var/log/vsftpd.log:/var/log/vsftpd.log:ro
     environment:
@@ -31,7 +31,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # 可选：添加 Prometheus 服务
+  # Optional: Add Prometheus service
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -51,7 +51,7 @@ services:
     depends_on:
       - vsftp-exporter
 
-  # 可选：添加 Grafana 服务
+  # Optional: Add Grafana service
   grafana:
     image: grafana/grafana:latest
     container_name: grafana

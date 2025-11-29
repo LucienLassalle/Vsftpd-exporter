@@ -1,6 +1,6 @@
 # Repository Guidelines
 ##
-Use Chinese 
+Use English
 
 ## Project Structure & Module Organization
 - `vsftp-exporter.go` contains the exporter entry point plus collectors, SSH helpers, and metric registration; keep new packages close to their domain logic before splitting to subdirectories.
@@ -22,7 +22,7 @@ Follow idiomatic Go style enforced by `gofmt`. Use descriptive CamelCase for exp
 Write table-driven tests with Go’s `testing` package and use subtests to capture different log scenarios. When parsing logs, craft fixtures under `log/fixtures` (create as needed) and load them via `t.TempDir()` copies so the originals remain untouched. Target coverage for new features above 80%, and ensure tests run cleanly with `go test -race ./...` before merging.
 
 ## Commit & Pull Request Guidelines
-Match the existing Conventional Commit pattern (`feat:`, `fix:`, `chore:`, optionally with Chinese scopes such as `feat(监控): ...`). Reference related issues in the message body when applicable. Pull requests should describe the change, include reproduction or validation steps, and attach updated screenshots when Grafana panels move. Confirm CI (or local `go test ./...`) results before requesting review.
+Match the existing Conventional Commit pattern (`feat:`, `fix:`, `chore:`, With english scopes such as `feat(monitoring): ...`). Reference related issues in the message body when applicable. Pull requests should describe the change, include reproduction or validation steps, and attach updated screenshots when Grafana panels move. Confirm CI (or local `go test ./...`) results before requesting review.
 
 ## Configuration & Security Tips
 Never commit real credentials; use placeholders in `config.json` and document secret handling in the PR. When introducing new configuration keys, add validation in the config loader and communicate defaults in the README. For remote monitoring, prefer SSH key authentication and document any required firewall or log-retention changes alongside the code.

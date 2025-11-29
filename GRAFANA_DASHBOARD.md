@@ -1,44 +1,75 @@
-# Grafana 仪表板使用指南
+# Grafana Dashboard User Guide
 
-## 仪表板概述
+## Dashboard Overview
 
-`grafana-dashboard.json` 是一个完整的 Vsftpd FTP 服务器监控仪表板配置文件，包含以下监控面板：
+`grafana-dashboard.json` is a complete Vsftpd FTP server monitoring dashboard configuration file (v2.0), featuring **21 comprehensive monitoring panels** organized into **6 logical rows** with color-coded metrics, advanced visualizations, and real-time monitoring capabilities.
 
-## 📊 面板布局
+**Dashboard Features:**
+- 21 monitoring panels with color-coded thresholds (Green/Yellow/Red)
+- 6 hour default time range for better trend visibility
+- Auto-refresh every 30 seconds
+- Dark theme optimized
+- Responsive layout for all screen sizes
+- Dynamic datasource and instance selection
 
-### Row 1: 服务状态概览
-实时显示 FTP 服务的核心状态指标
+## 📊 Panel Layout (21 Panels Total)
 
-1. **FTP 服务状态** - 显示服务是否在线（绿色=在线，红色=离线）
-2. **总连接数** - 当前 FTP 总连接数
-3. **活跃连接数** - ESTABLISHED 状态的连接数
-4. **唯一客户端数** - 最近5分钟内活跃的不同客户端IP数量
-5. **并发传输数** - 当前正在进行的文件传输数
-6. **活跃进程数** - 当前运行的 vsftpd 进程数
+### Row 1: 📊 Service Status Overview
+Real-time display of FTP service core status metrics (8 stat panels)
 
-### Row 2: 传输统计
-文件传输相关的统计信息
+1. **FTP Service** - Service status indicator (✅ Online / ❌ Offline) with background color
+2. **Total Connections** - Current FTP total connections with color thresholds
+3. **Active Connections** - Number of ESTABLISHED connections
+4. **Unique Clients** - Number of different client IPs with recent activity
+5. **Concurrent Transfers** - Number of currently ongoing file transfers
+6. **Active Processes** - Number of currently running vsftpd processes
+7. **Total Logins** - Cumulative number of FTP logins with trend graph
+8. **Last Login** - Relative time since last successful login (e.g., "5 minutes ago")
 
-7. **上传文件总数** - 累计上传的文件数量
-8. **下载文件总数** - 累计下载的文件数量
-9. **登录总次数** - FTP 登录的累计次数
-10. **最后登录时间** - 最近一次成功登录的时间戳
+### Row 2: 📈 Transfer Statistics
+File transfer and bandwidth monitoring with time series graphs
 
-11. **连接状态趋势** - 时间序列图，显示总连接数、活跃连接、等待关闭连接的变化趋势
-12. **传输速率 (MB/s)** - 时间序列图，显示上传和下载的实时速率
+9. **File Transfers Over Time** - Time series showing uploaded and downloaded files
+10. **Transfer Rate (Bytes/sec)** - Real-time upload and download transfer rates
 
-## 导入仪表板
+### Row 3: 🔌 Connection & Performance Metrics
+Connection status and performance analysis
 
-### 方式一：通过 Grafana UI 导入
+11. **Connection Status Trends** - Time series of total, active, and close-wait connections
+12. **Transfer Rate (MB/s)** - Transfer rate visualization in MB/s with legend statistics
 
-1. 登录 Grafana (默认: http://localhost:3000)
-2. 点击左侧菜单 "+" → "Import"
-3. 点击 "Upload JSON file"
-4. 选择 `grafana-dashboard.json` 文件
-5. 选择 Prometheus 数据源
-6. 点击 "Import"
+### Row 4: 👥 Client Activity & Top Statistics
+Client behavior analysis and activity patterns
 
-### 方式二：通过 API 导入
+13. **Top 10 Clients by Connections** - Donut chart with vibrant colors showing client distribution
+14. **Client Activity by Hour** - Bar gauge showing connection activity per hour with gradient coloring
+
+### Row 5: ⚠️ Errors & Security Monitoring
+Error tracking and security threat detection
+
+15. **Error Metrics** - Time series tracking failed logins, timeouts, and authentication errors
+16. **Rapid Reconnections Rate** - Security alert panel for suspicious reconnection patterns with threshold coloring
+
+### Row 6: 📊 Advanced Metrics & Histograms
+Advanced performance metrics and distributions
+
+17. **Transfer Duration Distribution** - Histogram showing transfer time distribution
+18. **Average Transfer Speed** - Gauge with color thresholds (0-10-50-100 MB/s)
+19. **Bandwidth Usage** - Gauge showing current bandwidth with color-coded thresholds
+20. **User Login Statistics** - Sortable table displaying top users by login count
+
+## Import Dashboard
+
+### Method 1: Import via Grafana UI
+
+1. Login to Grafana (default: http://localhost:3000)
+2. Click left menu "+" → "Import"
+3. Click "Upload JSON file"
+4. Select `grafana-dashboard.json` file
+5. Select Prometheus data source (or use the dynamic datasource variable)
+6. Click "Import"
+
+### Method 2: Import via API
 
 ```bash
 curl -X POST \
@@ -48,158 +79,213 @@ curl -X POST \
   http://localhost:3000/api/dashboards/db
 ```
 
-### 方式三：使用 Docker Compose 自动导入
+### Method 3: Auto-import using Docker Compose
 
-如果使用项目提供的 `docker-compose.yml`，仪表板会自动配置。
+If using the provided `docker-compose.yml`, the dashboard will be automatically configured.
 
-## 使用说明
+## Dashboard Variables
 
-### 变量选择
+The dashboard includes three dropdown variables for filtering:
 
-仪表板顶部有两个下拉菜单：
+- **Datasource**: Select your Prometheus data source (dynamic selection)
+- **Job**: Select monitoring job (default: vsftp-exporter)
+- **Instance**: Select monitoring instance (e.g., localhost:9101) - depends on selected datasource and job
 
-- **Job**: 选择监控任务（默认: vsftp-exporter）
-- **Instance**: 选择监控实例（如: localhost:9101）
+## Usage Instructions
 
-### 时间范围
+### Time Range
 
-- 默认显示最近 1 小时的数据
-- 可以通过右上角的时间选择器调整
-- 支持自动刷新（默认 30 秒）
+- Default displays last **6 hours** of data (extended from 1h for better trend visibility)
+- Can adjust via time selector in top right
+- Supports auto-refresh (default 30 seconds)
 
-### 面板交互
+### Panel Interactions
 
-- **点击图例**: 隐藏/显示特定指标
-- **拖动选择**: 放大特定时间范围
-- **双击**: 重置缩放
-- **悬停**: 查看详细数值
+- **Click legend**: Hide/show specific metrics
+- **Drag to select**: Zoom into specific time range
+- **Double click**: Reset zoom
+- **Hover**: View detailed values with min/max/mean/lastNotNull statistics
 
-## 告警配置
+### Color Coding
 
-可以为以下面板配置告警：
+All panels use color-coded thresholds:
+- **Green**: Normal operation
+- **Yellow**: Warning threshold
+- **Red**: Critical threshold
 
-1. **FTP 服务状态** - 服务离线告警
-2. **总连接数** - 连接数过高告警
-3. **活跃连接数** - 活跃连接异常告警
+## Key Features
 
-### 配置告警示例
+### Enhanced Visualizations
+- **Stat Panels**: Clean numeric displays with background coloring
+- **Time Series**: Full legend tables with min/max/mean statistics
+- **Donut Charts**: Vibrant colors for distribution visualization
+- **Bar Gauges**: Gradient coloring for activity patterns
+- **Histograms**: Transfer duration distribution analysis
+- **Gauges**: Color-coded performance indicators
+- **Tables**: Sortable user statistics
 
-1. 点击面板标题 → "Edit"
-2. 切换到 "Alert" 标签
-3. 点击 "Create Alert"
-4. 设置告警条件，例如：
+## Alert Configuration
+
+You can configure alerts for the following panels:
+
+1. **FTP Service** - Service offline alert
+2. **Total Connections** - High connection count alert
+3. **Active Connections** - Abnormal active connections alert
+4. **Error Metrics** - Failed login and timeout alerts
+5. **Rapid Reconnections** - Security threat detection
+
+### Alert Configuration Example
+
+1. Click panel title → "Edit"
+2. Switch to "Alert" tab
+3. Click "Create Alert"
+4. Set alert conditions, for example:
    ```
    WHEN last() OF query(A, 5m, now) IS BELOW 1
    ```
-5. 配置通知渠道
-6. 保存
+5. Configure notification channels
+6. Save
 
-## 自定义仪表板
+**Note**: See `alerts.yml` for pre-configured Prometheus alert rules.
 
-### 添加新面板
+## Customize Dashboard
 
-1. 点击仪表板右上角的 "Add panel"
-2. 选择可视化类型
-3. 配置查询，例如：
+### Add New Panel
+
+1. Click "Add panel" in top right of dashboard
+2. Select visualization type
+3. Configure query, for example:
    ```promql
    rate(vsftp_upload_total{job="$job", instance="$instance"}[5m])
    ```
-4. 调整面板设置
-5. 保存
+4. Adjust panel settings
+5. Save
 
-### 可用的 Prometheus 查询示例
+### Available Prometheus Query Examples
 
 ```promql
-# 每分钟传输文件数
+# Files transferred per minute
 rate(vsftp_upload_total[1m]) + rate(vsftp_download_total[1m])
 
-# 传输错误率
+# Transfer error rate
 rate(vsftp_transfer_errors_total[5m])
 
-# 平均传输速度 (MB/s)
+# Average transfer speed (MB/s)
 vsftp_average_transfer_speed_bytes_per_second / 1024 / 1024
 
-# 活跃用户数
+# Active user count
 count(rate(vsftp_user_logins_total[5m]) > 0)
 
-# 客户端连接分布 (Top 10)
+# Client connection distribution (Top 10)
 topk(10, rate(vsftp_client_connections_total[5m]))
 
-# 传输耗时 P95
+# Transfer duration P95
 histogram_quantile(0.95, rate(vsftp_transfer_duration_seconds_bucket[5m]))
 
-# 带宽使用率
+# Bandwidth usage (MB/s)
 vsftp_bandwidth_usage_bytes_per_second / 1024 / 1024
 
-# 登录失败率
+# Login failure rate
 rate(vsftp_failed_logins_total[5m])
+
+# Client activity by hour
+sum by(hour) (increase(vsftp_client_connections_total[1h]))
+
+# Rapid reconnection detection
+rate(vsftp_rapid_reconnections_total[5m])
 ```
 
-## 性能优化建议
+## Performance Optimization Recommendations
 
-1. **调整刷新间隔**: 根据需要调整自动刷新时间（默认 30 秒）
-2. **限制时间范围**: 查看长时间范围数据时，使用较大的时间间隔
-3. **使用变量**: 利用 Job 和 Instance 变量过滤数据
-4. **面板缓存**: Grafana 会自动缓存查询结果
+1. **Adjust refresh interval**: Adjust auto-refresh time as needed (default 30 seconds)
+2. **Limit time range**: Use larger time intervals when viewing long time ranges
+3. **Use variables**: Use Datasource, Job, and Instance variables to filter data
+4. **Panel caching**: Grafana automatically caches query results
+5. **Query optimization**: Use rate() and increase() functions for counter metrics
 
-## 故障排查
+## Troubleshooting
 
-### 仪表板显示 "No Data"
+### Dashboard shows "No Data"
 
-1. 检查 Prometheus 数据源配置
-2. 验证 vsftp-exporter 是否正常运行
-3. 确认 Prometheus 正在抓取指标
-4. 检查时间范围是否正确
+1. Check Prometheus data source configuration
+2. Verify vsftp-exporter is running normally
+3. Confirm Prometheus is scraping metrics (check `/metrics` endpoint)
+4. Check if time range is correct (default: last 6 hours)
+5. Verify datasource variable is correctly selected
 
-### 查询超时
+### Query timeout
 
-1. 减小时间范围
-2. 增加查询间隔
-3. 优化 Prometheus 配置
+1. Reduce time range
+2. Increase query interval
+3. Optimize Prometheus configuration
+4. Check Prometheus server resources
 
-### 指标不更新
+### Metrics not updating
 
-1. 检查 vsftp-exporter 日志
-2. 验证 FTP 服务是否有活动
-3. 确认日志文件路径正确
+1. Check vsftp-exporter logs
+2. Verify FTP service has activity
+3. Confirm log file path is correct
+4. Check auto-refresh is enabled (30s default)
 
-## 扩展建议
+### Colors not showing correctly
 
-可以添加以下面板来增强监控：
+1. Verify thresholds are properly configured
+2. Check metric values are within expected ranges
+3. Refresh browser cache
 
-1. **按文件类型统计** - 显示不同文件扩展名的传输量
-2. **客户端地理分布** - 如果有 GeoIP 数据
-3. **传输耗时热力图** - 显示传输时间分布
-4. **错误统计** - 详细的错误类型分析
-5. **用户活动排行** - Top N 活跃用户
-6. **带宽使用趋势** - 长期带宽使用分析
+## Extension Recommendations
 
-## 导出和分享
+You can add the following panels to enhance monitoring:
 
-### 导出仪表板
+1. **Statistics by file type** - Show transfer volume for different file extensions
+2. **Client geographic distribution** - If GeoIP data is available
+3. **Transfer success rate** - Percentage of successful transfers
+4. **Detailed error type analysis** - Breakdown of different error categories
+5. **User session duration** - Average session length per user
+6. **Peak usage times** - Heatmap of busiest hours/days
+7. **Storage utilization** - Disk space usage trends
+8. **Protocol version distribution** - FTP vs FTPS usage
 
-1. 点击仪表板设置（齿轮图标）
-2. 选择 "JSON Model"
-3. 复制 JSON 内容或下载文件
+## Export and Share
 
-### 分享仪表板
+### Export Dashboard
 
-1. 点击 "Share" 按钮
-2. 选择分享方式：
-   - **Link**: 生成分享链接
-   - **Snapshot**: 创建快照
-   - **Export**: 导出为 JSON
+1. Click dashboard settings (gear icon)
+2. Select "JSON Model"
+3. Copy JSON content or download file
 
-## 版本历史
+### Share Dashboard
+
+1. Click "Share" button
+2. Select sharing method:
+   - **Link**: Generate share link
+   - **Snapshot**: Create snapshot
+   - **Export**: Export as JSON
+
+## Version History
+
+- **v2.0** (2025-11-29)
+  - Major overhaul with 21 monitoring panels (up from 14)
+  - Added 6 logical rows for better organization
+  - Implemented color-coded thresholds (Green/Yellow/Red)
+  - Extended default time range from 1h to 6h
+  - Added dynamic datasource selection variable
+  - Enhanced visualizations: donut charts, bar gauges, histograms, gauges, tables
+  - Fixed "Last Login" display to show relative time
+  - Improved service status panel with color-coded mappings
+  - Added new panels: Top 10 Clients, Client Activity by Hour, Error Metrics, Rapid Reconnections, Transfer Duration Distribution, Average Transfer Speed, Bandwidth Usage, User Login Statistics
+  - All panels show legend statistics (min/max/mean/lastNotNull)
+  - Optimized for dark theme and responsive layouts
 
 - **v1.0** (2025-11-17)
-  - 初始版本
-  - 包含 14 个基础监控面板
-  - 支持服务状态、传输统计、连接监控
+  - Initial version
+  - Contains 14 basic monitoring panels
+  - Supports service status, transfer statistics, connection monitoring
 
-## 相关文档
+## Related Documentation
 
-- [README.md](README.md) - 项目总体说明
-- [DEPLOYMENT.md](DEPLOYMENT.md) - 部署指南
-- [alerts.yml](alerts.yml) - Prometheus 告警规则
-- [prometheus.yml](prometheus.yml) - Prometheus 配置
+- [README.md](README.md) - Project overview and setup
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment guide
+- [alerts.yml](alerts.yml) - Prometheus alert rules
+- [prometheus.yml](prometheus.yml) - Prometheus configuration
+- [CHANGELOG.md](CHANGELOG.md) - Version history and changes

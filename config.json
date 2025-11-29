@@ -3,6 +3,8 @@
     "ftp_port": "6069",
     "ftp_user": "ostore",
     "ftp_password": "iptv!#$os",
+    "tls": false,
+    "skip_tls": false,
     "need_ssh":  true,
     "ssh_port": "22",
     "ssh_user": "root",
