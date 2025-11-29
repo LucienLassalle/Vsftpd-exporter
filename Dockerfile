@@ -1,56 +1,56 @@
-# 构建阶段
+# Build stage
 FROM golang:1.24-alpine AS builder
 
-# 安装必要的构建工具
+# Install necessary build tools
 RUN apk add --no-cache git make
 
-# 设置工作目录
+# Set working directory
 WORKDIR /build
 
-# 复制 go mod 文件
+# Copy go mod files
 COPY go.mod go.sum ./
 
-# 下载依赖
+# Download dependencies
 RUN go mod download
 
-# 复制源代码
+# Copy source code
 COPY vsftp-exporter.go ./
 
-# 构建应用
+# Build application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o vsftp-exporter vsftp-exporter.go
 
-# 运行阶段
+# Runtime stage
 FROM alpine:latest
 
-# 安装必要的运行时工具（用于 netstat 命令）
+# Install necessary runtime tools (for netstat command)
 RUN apk --no-cache add ca-certificates net-tools openssh-client
 
-# 创建非 root 用户
+# Create non-root user
 RUN addgroup -g 1000 exporter && \
     adduser -D -u 1000 -G exporter exporter
 
-# 设置工作目录
+# Set working directory
 WORKDIR /app
 
-# 从构建阶段复制二进制文件
+# Copy binary from build stage
 COPY --from=builder /build/vsftp-exporter .
 
-# 复制配置文件模板
+# Copy configuration template
 COPY config.example.json ./config.example.json
 
-# 修改文件所有者
+# Change file ownership
 RUN chown -R exporter:exporter /app
 
-# 切换到非 root 用户
+# Switch to non-root user
 USER exporter
 
-# 暴露端口
+# Expose port
 EXPOSE 9101
 
-# 健康检查
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:9101/health || exit 1
 
-# 启动命令
+# Start command
 ENTRYPOINT ["./vsftp-exporter"]
 CMD ["-config=/app/config.json"]

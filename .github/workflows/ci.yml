@@ -8,67 +8,67 @@ on:
 
 jobs:
   test:
-    name: 测试
+    name: Test
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: 设置 Go 环境
-        uses: actions/setup-go@v4
+      - name: Setup Go environment
+        uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
-      - name: 缓存 Go 模块
-        uses: actions/cache@v3
+      - name: Cache Go modules
+        uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: 下载依赖
+      - name: Download dependencies
         run: go mod download
 
-      - name: 代码格式检查
+      - name: Code format check
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-            echo "代码格式不符合规范，请运行 'go fmt ./...'"
+            echo "Code format does not comply with standards, please run 'go fmt ./...'"
             gofmt -s -l .
             exit 1
           fi
 
-      - name: 代码静态检查
+      - name: Static code check
         run: go vet ./...
 
-      - name: 运行测试
+      - name: Run tests
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
-      - name: 上传覆盖率报告
-        uses: codecov/codecov-action@v3
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
         with:
           files: ./coverage.txt
           flags: unittests
           name: codecov-umbrella
 
   build:
-    name: 构建
+    name: Build
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: 设置 Go 环境
-        uses: actions/setup-go@v4
+      - name: Setup Go environment
+        uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
-      - name: 构建二进制文件
+      - name: Build binary
         run: make build
 
-      - name: 上传构建产物
-        uses: actions/upload-artifact@v3
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: vsftp-exporter
           path: vsftp-exporter

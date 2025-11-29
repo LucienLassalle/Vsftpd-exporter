@@ -3,6 +3,8 @@
     "ftp_port": "21",
     "ftp_user": "your_ftp_username",
     "ftp_password": "your_ftp_password",
+    "tls": false,
+    "skip_tls": false,
     "need_ssh": false,
     "ssh_port": "22",
     "ssh_user": "your_ssh_username",

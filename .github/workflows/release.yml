@@ -7,24 +7,24 @@ on:
 
 jobs:
   release:
-    name: 创建发布
+    name: Create Release
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: 设置 Go 环境
-        uses: actions/setup-go@v4
+      - name: Setup Go environment
+        uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
-      - name: 构建多平台二进制文件
+      - name: Build multi-platform binaries
         run: |
           make build-linux
           make build-windows
           make build-darwin
 
-      - name: 创建 Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |

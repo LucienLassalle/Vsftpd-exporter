@@ -3,7 +3,7 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "Prometheus",
+        "datasource": "${datasource}",
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "Vsftpd FTP 服务器完整监控仪表盘 v1.0 - 包含服务状态、传输统计、错误监控、性能分析、客户端统计等",
+  "description": "Vsftpd FTP Server Complete Monitoring Dashboard v2.0 - Enhanced with real metrics, improved visualizations, color coding, and comprehensive graphs",
   "editable": true,
   "gnetId": null,
   "graphTooltip": 1,
@@ -30,12 +30,84 @@
       },
       "id": 100,
       "panels": [],
-      "title": "📊 服务状态概览",
+      "title": "📊 Service Status Overview",
       "type": "row"
     },
     {
-      "datasource": "Prometheus",
-      "description": "",
+      "datasource": "${datasource}",
+      "description": "FTP login status: 1 = Success, 0 = Failure",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "❌ Offline"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "✅ Online"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "vsftp_login_success{job=\"$job\", instance=\"$instance\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "FTP Service",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Current total FTP connections",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -48,58 +120,6 @@
               {
                 "color": "green",
                 "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
-      "id": 1,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "8.0.0",
-      "targets": [
-        {
-          "expr": "vsftp_login_success{job=\"$job\", instance=\"$instance\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "FTP 服务状态",
-      "type": "stat"
-    },
-    {
-      "datasource": "Prometheus",
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
               },
               {
                 "color": "yellow",
@@ -111,13 +131,13 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         }
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 3,
+        "x": 3,
         "y": 1
       },
       "id": 2,
@@ -133,21 +153,21 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
           "expr": "vsftp_connections{job=\"$job\", instance=\"$instance\"}",
           "refId": "A"
         }
       ],
-      "title": "总连接数",
+      "title": "Total Connections",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
-      "description": "",
+      "datasource": "${datasource}",
+      "description": "Current ESTABLISHED connections",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -171,13 +191,13 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         }
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 3,
+        "x": 6,
         "y": 1
       },
       "id": 3,
@@ -193,21 +213,21 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
           "expr": "vsftp_established_connections{job=\"$job\", instance=\"$instance\"}",
           "refId": "A"
         }
       ],
-      "title": "活跃连接数",
+      "title": "Active Connections",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
-      "description": "",
+      "datasource": "${datasource}",
+      "description": "Number of unique client IPs with recent activity",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -218,18 +238,22 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "purple",
+                "color": "blue",
                 "value": null
+              },
+              {
+                "color": "purple",
+                "value": 10
               }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         }
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
+        "w": 3,
+        "x": 9,
         "y": 1
       },
       "id": 4,
@@ -245,21 +269,21 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
           "expr": "vsftp_unique_clients{job=\"$job\", instance=\"$instance\"}",
           "refId": "A"
         }
       ],
-      "title": "唯一客户端数",
+      "title": "Unique Clients",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
-      "description": "",
+      "datasource": "${datasource}",
+      "description": "Current concurrent file transfers",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -270,7 +294,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "orange",
+                "color": "green",
                 "value": null
               },
               {
@@ -283,13 +307,13 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         }
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 12,
         "y": 1
       },
       "id": 5,
@@ -305,86 +329,21 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
           "expr": "vsftp_concurrent_transfers{job=\"$job\", instance=\"$instance\"}",
           "refId": "A"
         }
       ],
-      "title": "并发传输数",
+      "title": "Concurrent Transfers",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "cyan",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 1
-      },
-      "id": 6,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "8.0.0",
-      "targets": [
-        {
-          "expr": "vsftp_active_processes{job=\"$job\", instance=\"$instance\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "活跃进程数",
-      "type": "stat"
-    },
-    {
-      "collapsed": false,
-      "datasource": null,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
-      "id": 101,
-      "panels": [],
-      "title": "📈 传输统计",
-      "type": "row"
-    },
-    {
-      "datasource": "Prometheus",
+      "datasource": "${datasource}",
+      "description": "Active vsftpd processes based on log entries",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -400,16 +359,16 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         }
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 6
+        "w": 3,
+        "x": 15,
+        "y": 1
       },
-      "id": 7,
+      "id": 6,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -422,20 +381,21 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "vsftp_files_sent_total{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vsftp_active_processes{job=\"$job\", instance=\"$instance\"}",
           "refId": "A"
         }
       ],
-      "title": "上传文件总数",
+      "title": "Active Processes",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": "${datasource}",
+      "description": "Total successful FTP logins",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -451,16 +411,16 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         }
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 6
+        "w": 3,
+        "x": 18,
+        "y": 1
       },
-      "id": 8,
+      "id": 7,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -473,71 +433,21 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
-      "pluginVersion": "8.0.0",
-      "targets": [
-        {
-          "expr": "vsftp_files_received_total{job=\"$job\", instance=\"$instance\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "下载文件总数",
-      "type": "stat"
-    },
-    {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 6
-      },
-      "id": 9,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
           "expr": "vsftp_login_total{job=\"$job\", instance=\"$instance\"}",
           "refId": "A"
         }
       ],
-      "title": "登录总次数",
+      "title": "Total Logins",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": "${datasource}",
+      "description": "Last successful FTP login timestamp",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -553,16 +463,16 @@
               }
             ]
           },
-          "unit": "dateTimeAsLocal"
+          "unit": "dateTimeFromNow"
         }
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 6
+        "w": 3,
+        "x": 21,
+        "y": 1
       },
-      "id": 10,
+      "id": 8,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -577,35 +487,247 @@
         },
         "textMode": "value"
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "vsftp_last_login_time * 1000{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vsftp_last_login_time{job=\"$job\", instance=\"$instance\"} * 1000",
           "refId": "A"
         }
       ],
-      "title": "最后登录时间",
+      "title": "Last Login",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
-      "description": "FTP 连接状态随时间变化趋势",
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 101,
+      "panels": [],
+      "title": "📈 Transfer Statistics",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Total files uploaded to FTP server",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
-            "axisLabel": "连接数",
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
-              "legend": false,
               "tooltip": false,
-              "vis": false
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [
+            "min",
+            "max",
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "vsftp_files_sent_total{job=\"$job\", instance=\"$instance\"}",
+          "legendFormat": "Files Uploaded",
+          "refId": "A"
+        },
+        {
+          "expr": "vsftp_files_received_total{job=\"$job\", instance=\"$instance\"}",
+          "legendFormat": "Files Downloaded",
+          "refId": "B"
+        }
+      ],
+      "title": "File Transfers Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Current upload and download transfer rate in bytes per second",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Bytes/sec",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [
+            "min",
+            "max",
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "rate(vsftp_upload_bytes_total{job=\"$job\", instance=\"$instance\"}[5m])",
+          "legendFormat": "Upload Rate",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(vsftp_download_bytes_total{job=\"$job\", instance=\"$instance\"}[5m])",
+          "legendFormat": "Download Rate",
+          "refId": "B"
+        }
+      ],
+      "title": "Transfer Rate (Bytes/sec)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 102,
+      "panels": [],
+      "title": "🔌 Connection & Performance Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "FTP connection status trends over time",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Connections",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -640,9 +762,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 15
       },
-      "id": 11,
+      "id": 12,
       "options": {
         "legend": {
           "calcs": [
@@ -651,42 +773,46 @@
             "max"
           ],
           "displayMode": "table",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
           "expr": "vsftp_connections{job=\"$job\", instance=\"$instance\"}",
-          "legendFormat": "总连接数",
+          "legendFormat": "Total Connections",
           "refId": "A"
         },
         {
           "expr": "vsftp_established_connections{job=\"$job\", instance=\"$instance\"}",
-          "legendFormat": "活跃连接",
+          "legendFormat": "Active (ESTABLISHED)",
           "refId": "B"
         },
         {
           "expr": "vsftp_close_wait_connections{job=\"$job\", instance=\"$instance\"}",
-          "legendFormat": "等待关闭",
+          "legendFormat": "Close Wait",
           "refId": "C"
         }
       ],
-      "title": "连接状态趋势",
+      "title": "Connection Status Trends",
       "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
-      "description": "文件传输速率 (MB/s)",
+      "datasource": "${datasource}",
+      "description": "File transfer rate in MB/s",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "MB/s",
             "axisPlacement": "auto",
             "barAlignment": 0,
@@ -694,9 +820,9 @@
             "fillOpacity": 20,
             "gradientMode": "opacity",
             "hideFrom": {
-              "legend": false,
               "tooltip": false,
-              "vis": false
+              "viz": false,
+              "legend": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -731,9 +857,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 10
+        "y": 15
       },
-      "id": 12,
+      "id": 13,
       "options": {
         "legend": {
           "calcs": [
@@ -742,31 +868,678 @@
             "max"
           ],
           "displayMode": "table",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
-      "pluginVersion": "8.0.0",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
           "expr": "rate(vsftp_upload_bytes_total{job=\"$job\", instance=\"$instance\"}[5m]) / 1024 / 1024",
-          "legendFormat": "上传速率",
+          "legendFormat": "Upload Rate",
           "refId": "A"
         },
         {
           "expr": "rate(vsftp_download_bytes_total{job=\"$job\", instance=\"$instance\"}[5m]) / 1024 / 1024",
-          "legendFormat": "下载速率",
+          "legendFormat": "Download Rate",
           "refId": "B"
         }
       ],
-      "title": "传输速率 (MB/s)",
+      "title": "Transfer Rate (MB/s)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "id": 103,
+      "panels": [],
+      "title": "👥 Client Activity & Top Statistics",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Top 10 client IPs by connection count",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "mappings": [],
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 14,
+      "options": {
+        "displayLabels": [
+          "name",
+          "value"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "topk(10, vsftp_client_connections_total{job=\"$job\", instance=\"$instance\"})",
+          "legendFormat": "{{client_ip}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 10 Clients by Connections",
+      "type": "piechart"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Client connection activity distribution by hour of day (total connections per hour)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 15,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "text": {}
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "vsftp_client_activity_by_hour{job=\"$job\", instance=\"$instance\"}",
+          "format": "time_series",
+          "instant": true,
+          "legendFormat": "Hour {{hour}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Client Activity by Hour (Total Connections)",
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 104,
+      "panels": [],
+      "title": "⚠️ Errors & Security Monitoring",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Failed logins, timeouts, and authentication errors",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Count",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "id": 16,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "vsftp_failed_logins_total{job=\"$job\", instance=\"$instance\"}",
+          "legendFormat": "Failed Logins",
+          "refId": "A"
+        },
+        {
+          "expr": "vsftp_connection_timeouts_total{job=\"$job\", instance=\"$instance\"}",
+          "legendFormat": "Connection Timeouts",
+          "refId": "B"
+        },
+        {
+          "expr": "vsftp_authentication_errors_total{job=\"$job\", instance=\"$instance\"}",
+          "legendFormat": "Authentication Errors",
+          "refId": "C"
+        }
+      ],
+      "title": "Error Metrics",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Rate of rapid reconnections per minute - indicates suspicious activity when > 0",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Reconnections/min",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "rate(vsftp_rapid_reconnections_total{job=\"$job\", instance=\"$instance\"}[5m]) * 60",
+          "legendFormat": "Rapid Reconnections/min",
+          "refId": "A"
+        }
+      ],
+      "title": "Rapid Reconnections Rate (Security Alert)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "id": 105,
+      "panels": [],
+      "title": "📊 Advanced Metrics & Histograms",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Transfer duration distribution histogram",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "mappings": [],
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "id": 18,
+      "options": {
+        "bucketOffset": 0,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum(rate(vsftp_transfer_duration_seconds_bucket{job=\"$job\", instance=\"$instance\"}[5m])) by (le)",
+          "format": "heatmap",
+          "legendFormat": "{{le}}s",
+          "refId": "A"
+        }
+      ],
+      "title": "Transfer Duration Distribution",
+      "type": "histogram"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Average transfer speed in MB/s",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "MBs"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 42
+      },
+      "id": 19,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "vsftp_average_transfer_speed_bytes_per_second{job=\"$job\", instance=\"$instance\"} / 1024 / 1024",
+          "refId": "A"
+        }
+      ],
+      "title": "Average Transfer Speed",
+      "type": "gauge"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Current bandwidth usage",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10485760
+              },
+              {
+                "color": "orange",
+                "value": 52428800
+              },
+              {
+                "color": "red",
+                "value": 104857600
+              }
+            ]
+          },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 42
+      },
+      "id": 20,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "vsftp_bandwidth_usage_bytes_per_second{job=\"$job\", instance=\"$instance\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Bandwidth Usage",
+      "type": "gauge"
+    },
+    {
+      "datasource": "${datasource}",
+      "description": "Top users by login count",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
+      "id": 21,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "enablePagination": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Value"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sort_desc(vsftp_user_logins_total{job=\"$job\", instance=\"$instance\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "User Login Statistics",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "Value": 3,
+              "instance": 2,
+              "job": 1,
+              "username": 4
+            },
+            "renameByName": {
+              "Value": "Login Count",
+              "username": "Username"
+            }
+          }
+        }
+      ],
+      "type": "table"
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 27,
+  "schemaVersion": 38,
   "style": "dark",
   "tags": [
     "vsftpd",
@@ -780,11 +1553,32 @@
       {
         "current": {
           "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
           "text": "vsftp-exporter",
           "value": "vsftp-exporter"
         },
-        "datasource": "Prometheus",
-        "description": "选择监控任务",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "description": "Select monitoring job",
         "hide": 0,
         "includeAll": false,
         "label": "Job",
@@ -795,7 +1589,7 @@
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 0,
+        "sort": 1,
         "type": "query"
       },
       {
@@ -804,8 +1598,11 @@
           "text": "localhost:9101",
           "value": "localhost:9101"
         },
-        "datasource": "Prometheus",
-        "description": "选择监控实例",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "description": "Select monitoring instance",
         "hide": 0,
         "includeAll": false,
         "label": "Instance",
@@ -816,18 +1613,18 @@
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 0,
+        "sort": 1,
         "type": "query"
       }
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Vsftpd FTP 服务器监控仪表盘",
-  "uid": "vsftpd-exporter-dashboard",
-  "version": 1
+  "title": "Vsftpd FTP Server Monitoring Dashboard v2.0",
+  "uid": "vsftpd-exporter-dashboard-v2",
+  "version": 2
 }

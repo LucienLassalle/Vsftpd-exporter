@@ -1,65 +1,65 @@
-# 快速开始指南
+# Quick Start Guide
 
-## 5 分钟快速部署
+## 5 Minute Quick Deployment
 
-### 前置要求
+### Prerequisites
 
-- Docker 和 Docker Compose（推荐）
-- 或 Go 1.24+（源码编译）
+- Docker and Docker Compose (recommended)
+- Or Go 1.24+ (compile from source)
 
-### 方式一：Docker Compose（最简单）⭐
+### Method 1: Docker Compose (Easiest) ⭐
 
 ```bash
-# 1. 克隆项目
+# 1. Clone project
 git clone <repository-url>
 cd Vsftpd-exporter
 
-# 2. 配置文件
+# 2. Configure
 cp config.example.json config.json
-# 编辑 config.json，填入你的 FTP 服务器信息
+# Edit config.json, fill in your FTP server information
 
-# 3. 一键启动
+# 3. Start with one command
 docker-compose up -d
 
-# 4. 验证服务
+# 4. Verify service
 curl http://localhost:9101/health
 ```
 
-**访问服务**:
+**Access services**:
 - Exporter Metrics: http://localhost:9101/metrics
 - Prometheus: http://localhost:9090
 - Grafana: http://localhost:3000 (admin/admin)
 
-### 方式二：直接运行二进制文件
+### Method 2: Run binary directly
 
 ```bash
-# 1. 编译
+# 1. Build
 make build
 
-# 2. 配置
+# 2. Configure
 cp config.example.json config.json
-# 编辑配置文件
+# Edit configuration file
 
-# 3. 运行
+# 3. Run
 ./vsftp-exporter -config=./config.json
 ```
 
-### 方式三：从源码运行
+### Method 3: Run from source
 
 ```bash
-# 1. 安装依赖
+# 1. Install dependencies
 go mod download
 
-# 2. 配置
+# 2. Configure
 cp config.example.json config.json
 
-# 3. 运行
+# 3. Run
 go run vsftp-exporter.go -config=./config.json
 ```
 
-## 配置说明
+## Configuration Guide
 
-最小配置示例 (`config.json`):
+Minimal configuration example (`config.json`):
 
 ```json
 {
@@ -74,9 +74,9 @@ go run vsftp-exporter.go -config=./config.json
 }
 ```
 
-### SSH 远程监控配置
+### SSH Remote Monitoring Configuration
 
-如果 FTP 服务器在远程主机上：
+If the FTP server is on a remote host:
 
 ```json
 {
@@ -96,15 +96,15 @@ go run vsftp-exporter.go -config=./config.json
 }
 ```
 
-## 验证部署
+## Verify Deployment
 
-### 1. 检查健康状态
+### 1. Check health status
 
 ```bash
 curl http://localhost:9101/health
 ```
 
-预期输出:
+Expected output:
 ```json
 {
   "status": "healthy",
@@ -114,13 +114,13 @@ curl http://localhost:9101/health
 }
 ```
 
-### 2. 查看指标
+### 2. View metrics
 
 ```bash
 curl http://localhost:9101/metrics | grep vsftp
 ```
 
-应该看到类似输出:
+Should see output like:
 ```
 vsftp_login_success 1
 vsftp_connections 5
@@ -130,87 +130,87 @@ vsftp_files_received_total 85
 ...
 ```
 
-### 3. 访问 Grafana 仪表板
+### 3. Access Grafana dashboard
 
-1. 打开浏览器访问: http://localhost:3000
-2. 登录（默认: admin/admin）
-3. 导航到 Dashboards → Vsftpd FTP 服务器监控仪表盘
+1. Open browser: http://localhost:3000
+2. Login (default: admin/admin)
+3. Navigate to Dashboards → Vsftpd FTP Server Monitoring Dashboard
 
-## 常见问题
+## Common Issues
 
-### Q: 无法连接 FTP 服务器
+### Q: Cannot connect to FTP server
 
-**A**: 检查以下项目:
+**A**: Check the following:
 ```bash
-# 1. 测试 FTP 连接
+# 1. Test FTP connection
 telnet <target_host> <ftp_port>
 
-# 2. 检查用户名密码
+# 2. Check username and password
 ftp <target_host>
 
-# 3. 查看 exporter 日志
+# 3. View exporter logs
 docker logs vsftp-exporter
-# 或
+# or
 journalctl -u vsftp-exporter -f
 ```
 
-### Q: SSH 连接失败
+### Q: SSH connection failed
 
-**A**: 验证 SSH 访问:
+**A**: Verify SSH access:
 ```bash
-# 测试 SSH 连接
+# Test SSH connection
 ssh <ssh_user>@<target_host>
 
-# 检查日志文件权限
+# Check log file permissions
 ssh <ssh_user>@<target_host> "ls -l /var/log/xferlog"
 ```
 
-### Q: 指标不更新
+### Q: Metrics not updating
 
-**A**: 检查日志文件:
+**A**: Check log file:
 ```bash
-# 确认日志文件存在且有新内容
+# Confirm log file exists and has new content
 tail -f /var/log/xferlog
 
-# 检查 exporter 是否正在读取
+# Check if exporter is reading
 curl http://localhost:9101/metrics | grep vsftp_files
 ```
 
-### Q: Grafana 仪表板显示 "No Data"
+### Q: Grafana dashboard shows "No Data"
 
-**A**: 验证数据链路:
+**A**: Verify data pipeline:
 ```bash
-# 1. 检查 Prometheus 是否抓取数据
+# 1. Check if Prometheus is scraping data
 curl http://localhost:9090/api/v1/targets
 
-# 2. 查询 Prometheus
+# 2. Query Prometheus
 curl 'http://localhost:9090/api/v1/query?query=vsftp_login_success'
 
-# 3. 检查 Grafana 数据源配置
+# 3. Check Grafana data source configuration
 # Grafana → Configuration → Data Sources → Prometheus
 ```
 
-## 下一步
+## Next Steps
 
-- 📖 阅读 [完整文档](README.md)
-- 🚀 查看 [部署指南](DEPLOYMENT.md)
-- 📊 了解 [Grafana 仪表板](GRAFANA_DASHBOARD.md)
-- ⚠️ 配置 [告警规则](alerts.yml)
+- 📖 Read [full documentation](README.md)
+- 🚀 View [deployment guide](DEPLOYMENT.md)
+- 📊 Learn about [Grafana dashboard](GRAFANA_DASHBOARD.md)
+- ⚠️ Configure [alert rules](alerts.yml)
 
-## 获取帮助
+## Get Help
 
-- 查看日志: `docker logs vsftp-exporter`
-- 运行测试: `make test`
-- 验证配置: `./vsftp-exporter -config=./config.json`
+- View logs: `docker logs vsftp-exporter`
+- Run tests: `make test`
+- Validate configuration: `./vsftp-exporter -config=./config.json`
 
-## 生产环境建议
+## Production Environment Recommendations
 
-1. **使用 Systemd 服务** - 参考 [DEPLOYMENT.md](DEPLOYMENT.md)
-2. **配置告警** - 使用提供的 [alerts.yml](alerts.yml)
-3. **定期备份** - 备份 Grafana 仪表板和 Prometheus 数据
-4. **监控 Exporter** - 配置 `VsftpExporterDown` 告警
-5. **日志轮转** - 确保 FTP 日志文件定期轮转
+1. **Use Systemd service** - See [DEPLOYMENT.md](DEPLOYMENT.md)
+2. **Configure alerts** - Use provided [alerts.yml](alerts.yml)
+3. **Regular backups** - Backup Grafana dashboards and Prometheus data
+4. **Monitor Exporter** - Configure `VsftpExporterDown` alert
+5. **Log rotation** - Ensure FTP log files rotate regularly
 
 ---
 
-**需要帮助？** 查看 [故障排查指南](README.md#故障排除) 或提交 Issue。
+**Need help?** See [Troubleshooting Guide](README.md#troubleshooting) or submit an Issue.
